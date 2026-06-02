@@ -93,7 +93,7 @@ _LLM_CREATE_COUNTER = itertools.count(1)
 # RAG 外部知识库检索服务（Coze Coding）
 # ==============================================
 class RAGService:
-    """Coze 知识库检索增强服务。向云上 Coze API 发送用户问题，获取相关文档片段。"""
+    """Coze 知识库检索增强服务。向云上 Coze API 发送用户问题，获取相关知识。"""
 
     def __init__(self, base_url, api_token, dataset_name="knowledge_base", top_k=4, min_score=0.5):
         self.base_url = base_url.rstrip("/")
@@ -104,10 +104,9 @@ class RAGService:
 
     def retrieve(self, query):
         """
-        调用 Coze API 检索相关文档。
-        约定参数：mode=search, max_level=3。
-        返回：[{"content": "...", "score": 0.9, "title": "..."}, ...]
-        失败返回空列表——RAG 失败不应阻断对话。
+        调用 Coze API 检索相关知识。
+        统一返回格式：{"success": bool, "answer": str, "source": str, "raw": dict}
+        失败返回 None——RAG 失败不应阻断对话。
         """
         payload = {
             "mode": "search",
@@ -126,8 +125,20 @@ class RAGService:
             resp = requests.post(self.base_url, headers=headers, json=payload, timeout=15)
             if resp.status_code != 200:
                 logger.warning(f"[RAG] Coze API returned {resp.status_code}: {resp.text[:200]}")
-                return []
+                return None
             data = resp.json()
+
+            # 格式 1：Coze QA 工作流直接返回答案（extracted_answer + extracted_source）
+            if isinstance(data, dict) and "extracted_answer" in data:
+                logger.info(f"[RAG] Coze QA matched: {data.get('message', '')}")
+                return {
+                    "success": data.get("success", True),
+                    "answer": data.get("extracted_answer", ""),
+                    "source": data.get("extracted_source", ""),
+                    "raw": data,
+                }
+
+            # 格式 2：传统检索结果（documents 数组）
             docs = []
             if isinstance(data, dict):
                 if "data" in data and "documents" in data["data"]:
@@ -140,28 +151,44 @@ class RAGService:
                     docs = data["items"]
             if isinstance(data, list):
                 docs = data
-            logger.info(f"[RAG] query complete, {len(docs)} docs returned")
-            return docs
+
+            if docs:
+                logger.info(f"[RAG] retrieved {len(docs)} documents")
+                answer_parts = []
+                sources = []
+                for doc in docs:
+                    content = doc.get("content") or doc.get("text") or str(doc)
+                    title = doc.get("title") or doc.get("source") or ""
+                    if content:
+                        answer_parts.append(content)
+                    if title:
+                        sources.append(title)
+                return {
+                    "success": True,
+                    "answer": "\n\n".join(answer_parts),
+                    "source": ", ".join(sources) if sources else "",
+                    "raw": data,
+                }
+
+            logger.warning(f"[RAG] unrecognized JSON structure: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+            return None
+
         except Exception as e:
             logger.warning(f"[RAG] Coze API call failed: {e}")
-            return []
+            return None
 
-    def format_context(self, docs):
-        """将检索到的文档片段格式化为 LLM prompt 中的参考上下文。"""
-        if not docs:
+    def format_context(self, result):
+        """
+        将检索结果格式化为 LLM prompt 中的参考上下文。
+        result: retrieve() 返回的统一格式 dict 或 None。
+        """
+        if not result or not result.get("answer"):
             return ""
-        parts = ["【参考知识库资料】"]
-        for i, doc in enumerate(docs, 1):
-            content = doc.get("content", "") or doc.get("text", "") or str(doc)
-            title = doc.get("title", "") or doc.get("source", "")
-            score = doc.get("score", "") or doc.get("similarity", "")
-            header = f"[资料{i}]"
-            if title:
-                header += f" (来源: {title})"
-            if score:
-                header += f" (相关度: {score})"
-            parts.append(f"{header}\n{content}")
-        return "\n\n".join(parts)
+        parts = ["【知识库检索结果】"]
+        if result.get("source"):
+            parts.append(f"来源: {result['source']}")
+        parts.append(result["answer"])
+        return "\n".join(parts)
 
 
 # ==============================================
@@ -295,11 +322,11 @@ class BaseLLMProvider(ABC):
             query = user_query or user_message
             if query:
                 try:
-                    docs = self._rag_service.retrieve(query)
-                    if docs:
-                        rag_context = self._rag_service.format_context(docs)
+                    result = self._rag_service.retrieve(query)
+                    if result and result.get("answer"):
+                        rag_context = self._rag_service.format_context(result)
                         system_content = system_content + "\n\n" + rag_context
-                        logger.info(f"[RAG] context injected, chat_id={chat_entry.id} docs={len(docs)}")
+                        logger.info(f"[RAG] context injected, chat_id={chat_entry.id} source={result.get("source","")}")
                 except Exception as e:
                     logger.warning(f"[RAG] skipped (error): {e}")
 
