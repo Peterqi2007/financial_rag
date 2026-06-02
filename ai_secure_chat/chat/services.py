@@ -201,7 +201,7 @@ class BaseLLMProvider(ABC):
     约束子类必须实现：
         - _make_client()            构造底层 SDK 客户端
         - stream_chat(chat_entry, user_message)
-                                    生成器：yield (event_type, payload)
+                                    生成器：yield event_type, payload
                                     event_type ∈ {"delta","error","done"}
                                     绝不 raise
         - chat(chat_entry, user_message)  -> str
@@ -326,7 +326,7 @@ class BaseLLMProvider(ABC):
                     if result and result.get("answer"):
                         rag_context = self._rag_service.format_context(result)
                         system_content = system_content + "\n\n" + rag_context
-                        logger.info(f"[RAG] context injected, chat_id={chat_entry.id} source={result.get("source","")}")
+                        logger.info(f'[RAG] context injected, chat_id={chat_entry.id} source={result.get("source","")}')
                 except Exception as e:
                     logger.warning(f"[RAG] skipped (error): {e}")
 
@@ -423,8 +423,8 @@ class QwenProvider(BaseLLMProvider):
             logger.error(
                 f"[Qwen 流式 建立连接失败] {err} | chat_id={chat_entry_id} user_id={user_id}"
             )
-            yield ("error", str(err))
-            yield ("done", "")
+            yield "error", str(err)
+            yield "done", ""
             return
 
         try:
@@ -437,12 +437,12 @@ class QwenProvider(BaseLLMProvider):
                     piece = getattr(delta, "content", None) if delta else None
                     if piece:
                         full_text_parts.append(piece)
-                        yield ("delta", piece)
+                        yield "delta", piece
                 except Exception as inner:
                     logger.warning(f"[Qwen 流式 chunk 解析异常] {inner}")
                     continue
         except Exception as e:
-            yield ("error", f"读取流中断：{e}")
+            yield "error", f"读取流中断：{e}"
         finally:
             try:
                 if stream is not None:
@@ -450,7 +450,7 @@ class QwenProvider(BaseLLMProvider):
             except Exception:
                 pass
 
-        yield ("done", "".join(full_text_parts))
+        yield "done", "".join(full_text_parts)
 
     # ---------- 非流式 ----------
     def chat(self, chat_entry: "ChatEntry", user_message: str) -> str:
@@ -557,8 +557,8 @@ class DeepSeekProvider(BaseLLMProvider):
         except Exception as e:
             err = self._translate_exception(e)
             logger.error(f"[DeepSeek 流式 建立连接失败] {err}")
-            yield ("error", str(err))
-            yield ("done", "")
+            yield "error", str(err)
+            yield "done", ""
             return
 
         try:
@@ -576,13 +576,13 @@ class DeepSeekProvider(BaseLLMProvider):
                     piece = getattr(delta, "content", None)
                     if piece:
                         full_text_parts.append(piece)
-                        yield ("delta", piece)
+                        yield "delta", piece
                     # 如果 chunk 仅包含 reasoning_content 而无 content，直接跳过
                 except Exception as inner:
                     logger.warning(f"[DeepSeek 流式 chunk 解析异常] {inner}")
                     continue
         except Exception as e:
-            yield ("error", f"DeepSeek 读取流中断：{e}")
+            yield "error", f"DeepSeek 读取流中断：{e}"
         finally:
             try:
                 if stream is not None:
@@ -590,7 +590,7 @@ class DeepSeekProvider(BaseLLMProvider):
             except Exception:
                 pass
 
-        yield ("done", "".join(full_text_parts))
+        yield "done", "".join(full_text_parts)
 
     # ---------- 非流式对话 ----------
     def chat(self, chat_entry, user_message):
@@ -675,14 +675,14 @@ def get_qwen_client(user):
 
 def iter_qwen_stream_text(chat_entry: "ChatEntry", user_message: str):
     """
-    兼容旧接口：生成器 yield (event_type, payload)。
+    兼容旧接口：生成器 yield event_type, payload。
     新代码请用 `provider = get_llm_provider(user); provider.stream_chat(...)`。
     """
     try:
         provider = get_llm_provider(chat_entry.user)
     except LLMError as e:
-        yield ("error", str(e))
-        yield ("done", "")
+        yield "error", str(e)
+        yield "done", ""
         return
     yield from provider.stream_chat(chat_entry, user_message)
 
