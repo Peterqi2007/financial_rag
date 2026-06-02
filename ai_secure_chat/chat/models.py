@@ -20,8 +20,7 @@ def get_fernet_cipher():
     return Fernet(fernet_key)
 
 # ==============================================
-# 1. 用户扩展资料模型（核心：隐私密码、用户偏好）
-# 关联Django内置User模型，实现业务需求的加密/个性化配置
+# 1. 用户扩展资料模型（核心：隐私密码、LLM偏好、RAG配置）
 # ==============================================
 class UserProfile(models.Model):
     # 一对一关联系统用户，用户删除则资料同步删除
@@ -43,14 +42,12 @@ class UserProfile(models.Model):
     # 默认使用的大模型名称
     default_model = models.CharField(max_length=50, default="qwen-plus", blank=True, verbose_name="默认大模型")
 
-    # ====================== 核心修改：API密钥加密存储 ======================
-    # 数据库仅存储加密后的密文
+    # ====================== API密钥加密存储 ======================
     _api_key_encrypted = models.CharField(max_length=512, default='', verbose_name="API密钥密文")
 
-    # 自动加解密的属性，原有代码完全不用改！
     @property
     def api_key(self):
-        """读取时自动解密，原有代码直接用 user_profile.api_key 即可拿到明文"""
+        """读取时自动解密"""
         if not self._api_key_encrypted:
             return ""
         try:
@@ -60,7 +57,7 @@ class UserProfile(models.Model):
 
     @api_key.setter
     def api_key(self, raw_value):
-        """写入时自动加密，原有表单代码完全不用改"""
+        """写入时自动加密"""
         if not raw_value:
             self._api_key_encrypted = ""
             return
@@ -69,6 +66,56 @@ class UserProfile(models.Model):
     # 创建/更新时间
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    # ====================== RAG 外部知识库检索增强配置（Coze）======================
+    # 是否启用 RAG 知识库检索
+    rag_enabled = models.BooleanField(default=False, verbose_name="启用 RAG 知识库")
+    # Coze 知识库 API 地址
+    rag_base_url = models.CharField(
+        max_length=512,
+        default="https://5z3ysb9pn9.coze.site/run",
+        blank=True,
+        verbose_name="知识库 API 地址",
+    )
+    # Coze API Token（加密存储，与 api_key 共用 Fernet 方案）
+    _rag_api_token_encrypted = models.CharField(
+        max_length=512, default="", blank=True, verbose_name="知识库 Token 密文"
+    )
+    # Coze 数据集名称
+    rag_dataset_name = models.CharField(
+        max_length=100, default="knowledge_base", blank=True, verbose_name="知识库数据集名称"
+    )
+    # 检索返回条数（1-20）
+    rag_top_k = models.IntegerField(
+        default=4,
+        validators=[MinValueValidator(1), MaxValueValidator(20)],
+        verbose_name="检索返回条数",
+    )
+    # 最低相似度阈值（0-1），低于此分数的文档将被丢弃
+    rag_min_score = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        verbose_name="最低相似度阈值",
+    )
+
+    # ====================== RAG Token 自动加解密属性 ======================
+    @property
+    def rag_api_token(self):
+        """读取 RAG Token 时自动解密"""
+        if not self._rag_api_token_encrypted:
+            return ""
+        try:
+            return get_fernet_cipher().decrypt(self._rag_api_token_encrypted.encode()).decode()
+        except Exception:
+            return ""
+
+    @rag_api_token.setter
+    def rag_api_token(self, raw_value):
+        """写入 RAG Token 时自动加密"""
+        if not raw_value:
+            self._rag_api_token_encrypted = ""
+            return
+        self._rag_api_token_encrypted = get_fernet_cipher().encrypt(raw_value.encode()).decode()
 
     # 密码验证方法
     def check_privacy_password(self, raw_password):
@@ -82,43 +129,31 @@ class UserProfile(models.Model):
         return f"{self.user.username} 的资料"
 
 # ==============================================
-# 2. 顶级分类模型（一级目录：如 工作、生活、学习）
-# 归属用户，用于文件夹的顶级分类
+# 2. 顶级分类模型（一级目录）
 # ==============================================
 class Category(models.Model):
-    # 所属用户
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="categories", verbose_name="所属用户")
-    # 分类名称
     name = models.CharField(max_length=100, verbose_name="分类名称")
-    # 排序序号（支持拖动排序）
     order = models.IntegerField(default=0, verbose_name="排序序号")
-    # 创建时间
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
 
     class Meta:
         verbose_name = "分类"
         verbose_name_plural = "分类"
-        ordering = ["order", "created_at"]  # 默认按排序+时间展示
+        ordering = ["order", "created_at"]
 
     def __str__(self):
         return self.name
 
 # ==============================================
-# 3. 文件夹模型（二级目录，支持无限嵌套）
-# 核心：支持加密、归属分类/父文件夹，用于管理对话条目
+# 3. 文件夹模型（支持无限嵌套）
 # ==============================================
 class Folder(models.Model):
-    # 所属用户
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="folders", verbose_name="所属用户")
-    # 所属顶级分类（可为空，允许无分类）
     category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="folders", blank=True, null=True, verbose_name="所属分类")
-    # 父文件夹（支持嵌套子文件夹，为空则为一级文件夹）
     parent_folder = models.ForeignKey("self", on_delete=models.CASCADE, related_name="child_folders", blank=True, null=True, verbose_name="父文件夹")
-    # 文件夹名称
     name = models.CharField(max_length=100, verbose_name="文件夹名称")
-    # 排序序号
     order = models.IntegerField(default=0, verbose_name="排序序号")
-    # 创建时间
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
 
     class Meta:
@@ -131,18 +166,12 @@ class Folder(models.Model):
 
 # ==============================================
 # 4. 对话条目模型（核心业务：单个对话会话）
-# 归属文件夹，存储对话标题、系统提示词、模型参数
 # ==============================================
 class ChatEntry(models.Model):
-    # 所属用户
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="chat_entries", verbose_name="所属用户")
-    # 所属文件夹
     folder = models.ForeignKey(Folder, on_delete=models.CASCADE, related_name="chat_entries", verbose_name="所属文件夹")
-    # 对话标题
     title = models.CharField(max_length=200, verbose_name="对话标题")
-    # ✅ 新增：用户描述/简介字段（核心需求1）
     description = models.CharField(max_length=255, blank=True, default="", verbose_name="对话简介")
-    # 系统提示词（大模型角色设定）
     system_prompt = models.TextField(blank=True, default="你是一个智能助手", verbose_name="系统提示词")
     # 大模型调用参数
     temperature = models.FloatField(default=0.7, verbose_name="温度参数",
@@ -151,53 +180,48 @@ class ChatEntry(models.Model):
                               validators=[MinValueValidator(0.0), MaxValueValidator(1.0)])
     max_tokens = models.IntegerField(default=2048, verbose_name="最大Token",
                                      validators=[MinValueValidator(1), MaxValueValidator(8192)])
-    # 是否为隐私对话
+    # 是否隐私对话
     is_private = models.BooleanField(default=False, verbose_name="是否隐私对话")
-    # ✅【新增】Mezzanine 官方关键字/标签字段（逗号分隔，自动管理）
+    # ✅ 是否对该对话启用 RAG 知识库检索增强
+    use_rag = models.BooleanField(default=True, verbose_name="启用 RAG 检索增强")
+    # Mezzanine 关键字/标签
     keywords = KeywordsField(verbose_name="对话关键字", blank=True)
-    # 创建/更新时间
+    # 时间
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     class Meta:
         verbose_name = "对话条目"
         verbose_name_plural = "对话条目"
-        ordering = ["-updated_at"]  # 最新修改的对话排在前面
+        ordering = ["-updated_at"]
 
     def __str__(self):
         return self.title
 
 # ==============================================
-# 5. 对话消息模型（对话内容：用户提问 + AI回复）
-# 支持流式输出标记，存储完整对话历史
+# 5. 对话消息模型（用户提问 + AI回复）
 # ==============================================
 class ChatMessage(models.Model):
     ROLE_CHOICES = (
         ("user", "用户"),
         ("assistant", "AI助手"),
     )
-    # 所属对话条目
     chat_entry = models.ForeignKey(ChatEntry, on_delete=models.CASCADE, related_name="messages", verbose_name="所属对话")
-    # 消息角色（用户/AI）
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, verbose_name="消息角色")
-    # 消息内容
     content = models.TextField(verbose_name="消息内容")
-    # 是否为流式输出消息
     is_stream = models.BooleanField(default=True, verbose_name="是否流式输出")
-    # 创建时间
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="发送时间")
 
     class Meta:
         verbose_name = "对话消息"
         verbose_name_plural = "对话消息"
-        ordering = ["created_at"]  # 按时间正序展示对话
+        ordering = ["created_at"]
 
     def __str__(self):
         return f"{self.get_role_display()}：{self.content[:30]}..."
 
 # ==============================================
-# 6. 大模型参数配置模型（可选：全局/自定义参数模板）
-# 方便用户快速复用参数配置
+# 6. 大模型参数配置模型
 # ==============================================
 class ModelConfig(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="model_configs", blank=True, null=True, verbose_name="所属用户")

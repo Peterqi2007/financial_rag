@@ -72,7 +72,7 @@ class FolderForm(forms.ModelForm):
 class ChatEntryForm(forms.ModelForm):
     class Meta:
         model = ChatEntry
-        fields = ['title', 'description', 'temperature', 'top_p', 'max_tokens', 'is_private', 'folder', 'keywords']
+        fields = ['title', 'description', 'temperature', 'top_p', 'max_tokens', 'is_private', 'use_rag', 'folder', 'keywords']
         labels = {
             'title': ChatEntry._meta.get_field('title').verbose_name,
             'description': ChatEntry._meta.get_field('description').verbose_name,
@@ -80,6 +80,7 @@ class ChatEntryForm(forms.ModelForm):
             'top_p': ChatEntry._meta.get_field('top_p').verbose_name,
             'max_tokens': ChatEntry._meta.get_field('max_tokens').verbose_name,
             'is_private': ChatEntry._meta.get_field('is_private').verbose_name,
+            'use_rag': ChatEntry._meta.get_field('use_rag').verbose_name,
             'folder': ChatEntry._meta.get_field('folder').verbose_name,
             'keywords': ChatEntry._meta.get_field('keywords').verbose_name,
         }
@@ -90,6 +91,7 @@ class ChatEntryForm(forms.ModelForm):
             'top_p': forms.NumberInput(attrs={'class': 'form-control', 'min': 0.0, 'max': 1.0, 'step': 0.01}),
             'max_tokens': forms.NumberInput(attrs={'class': 'form-control', 'min': 1, 'max': 8192}),
             'is_private': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'use_rag': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'folder': forms.Select(attrs={'class': 'form-select'}),
             # ✅ 关键字输入框：逗号分隔多个关键字，适配Bootstrap样式
             'keywords': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '多个关键字用英文逗号分隔（如：AI,对话,安全）'}),
@@ -198,7 +200,49 @@ class UserProfileForm(MezzanineProfileForm):
             widget=forms.TextInput(attrs={'class': 'form-control'})
         )
 
-    # 仅验证隐私密码，不干扰原生登录密码
+    
+        # ====================== RAG 知识库配置字段 ======================
+        self.fields["rag_enabled"] = forms.BooleanField(
+            label="启用 RAG 知识库",
+            initial=self.profile.rag_enabled if self.profile else False,
+            required=False,
+            widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        )
+        self.fields["rag_api_token"] = forms.CharField(
+            label="知识库 API Token",
+            initial=self.profile.rag_api_token if self.profile else "",
+            required=False,
+            widget=forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Bearer Token"}),
+        )
+        self.fields["rag_dataset_name"] = forms.CharField(
+            label="数据集名称",
+            initial=self.profile.rag_dataset_name if self.profile else "knowledge_base",
+            required=False,
+            widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "knowledge_base"}),
+        )
+        self.fields["rag_base_url"] = forms.CharField(
+            label="知识库 API 地址",
+            initial=self.profile.rag_base_url if self.profile else "",
+            required=False,
+            widget=forms.URLInput(attrs={"class": "form-control"}),
+        )
+        self.fields["rag_top_k"] = forms.IntegerField(
+            label="检索返回条数",
+            initial=self.profile.rag_top_k if self.profile else 4,
+            required=False,
+            min_value=1,
+            max_value=20,
+            widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 20}),
+        )
+        self.fields["rag_min_score"] = forms.FloatField(
+            label="最低相似度阈值",
+            initial=self.profile.rag_min_score if self.profile else 0.5,
+            required=False,
+            min_value=0.0,
+            max_value=1.0,
+            widget=forms.NumberInput(attrs={"class": "form-control", "min": 0.0, "max": 1.0, "step": 0.01}),
+        )
+        # 仅验证隐私密码，不干扰原生登录密码
     def clean(self):
         cleaned_data = super().clean()
         # 只校验你的隐私密码，原生密码由Mezzanine自动校验
@@ -219,6 +263,13 @@ class UserProfileForm(MezzanineProfileForm):
         # 保存 LLM 厂商选择
         profile.llm_provider = self.cleaned_data.get("llm_provider", "qwen")
         profile.api_key = self.cleaned_data.get("api_key", "")
+        # 保存 RAG 知识库配置
+        profile.rag_enabled = self.cleaned_data.get("rag_enabled", False)
+        profile.rag_api_token = self.cleaned_data.get("rag_api_token", "")
+        profile.rag_dataset_name = self.cleaned_data.get("rag_dataset_name", "knowledge_base")
+        profile.rag_base_url = self.cleaned_data.get("rag_base_url", "")
+        profile.rag_top_k = self.cleaned_data.get("rag_top_k", 4)
+        profile.rag_min_score = self.cleaned_data.get("rag_min_score", 0.5)
 
         # 加密保存隐私对话密码
         pwd = self.cleaned_data.get("privacy_password")

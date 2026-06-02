@@ -45,6 +45,8 @@ import logging
 import itertools
 import sys
 import time
+import requests
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,82 @@ class LLMConfigError(LLMError):
 _LLM_CREATE_COUNTER = itertools.count(1)
 
 
+
+# ==============================================
+# RAG 外部知识库检索服务（Coze Coding）
+# ==============================================
+class RAGService:
+    """Coze 知识库检索增强服务。向云上 Coze API 发送用户问题，获取相关文档片段。"""
+
+    def __init__(self, base_url, api_token, dataset_name="knowledge_base", top_k=4, min_score=0.5):
+        self.base_url = base_url.rstrip("/")
+        self.api_token = api_token
+        self.dataset_name = dataset_name
+        self.top_k = top_k
+        self.min_score = min_score
+
+    def retrieve(self, query):
+        """
+        调用 Coze API 检索相关文档。
+        约定参数：mode=search, max_level=3。
+        返回：[{"content": "...", "score": 0.9, "title": "..."}, ...]
+        失败返回空列表——RAG 失败不应阻断对话。
+        """
+        payload = {
+            "mode": "search",
+            "documents": [],
+            "dataset_name": self.dataset_name,
+            "max_level": 3,
+            "original_query": query,
+            "top_k": self.top_k,
+            "min_score": self.min_score,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            resp = requests.post(self.base_url, headers=headers, json=payload, timeout=15)
+            if resp.status_code != 200:
+                logger.warning(f"[RAG] Coze API returned {resp.status_code}: {resp.text[:200]}")
+                return []
+            data = resp.json()
+            docs = []
+            if isinstance(data, dict):
+                if "data" in data and "documents" in data["data"]:
+                    docs = data["data"]["documents"]
+                elif "documents" in data:
+                    docs = data["documents"]
+                elif "results" in data:
+                    docs = data["results"]
+                elif "items" in data:
+                    docs = data["items"]
+            if isinstance(data, list):
+                docs = data
+            logger.info(f"[RAG] query complete, {len(docs)} docs returned")
+            return docs
+        except Exception as e:
+            logger.warning(f"[RAG] Coze API call failed: {e}")
+            return []
+
+    def format_context(self, docs):
+        """将检索到的文档片段格式化为 LLM prompt 中的参考上下文。"""
+        if not docs:
+            return ""
+        parts = ["【参考知识库资料】"]
+        for i, doc in enumerate(docs, 1):
+            content = doc.get("content", "") or doc.get("text", "") or str(doc)
+            title = doc.get("title", "") or doc.get("source", "")
+            score = doc.get("score", "") or doc.get("similarity", "")
+            header = f"[资料{i}]"
+            if title:
+                header += f" (来源: {title})"
+            if score:
+                header += f" (相关度: {score})"
+            parts.append(f"{header}\n{content}")
+        return "\n\n".join(parts)
+
+
 # ==============================================
 # 抽象基类
 # ==============================================
@@ -119,11 +197,13 @@ class BaseLLMProvider(ABC):
         api_key: str,
         base_url: Optional[str] = None,
         model: Optional[str] = None,
+        rag_service = None,
     ):
         self.user = user
         self._api_key = api_key
         self._base_url = base_url or self.DEFAULT_BASE_URL
         self._model = model or self.DEFAULT_MODEL
+        self._rag_service = rag_service  # RAG 检索服务实例（可选）
         self._client = self._make_client()
 
     # ---------- 钩子 ----------
@@ -154,7 +234,20 @@ class BaseLLMProvider(ABC):
 
         # 读取用户默认模型（若未设置则使用 Provider 类自身的 DEFAULT_MODEL）
         default_model = profile.default_model or cls.DEFAULT_MODEL
-        return cls(user, api_key=profile.api_key, model=default_model)
+
+        # 构造 RAG 知识库检索服务（若用户启用）
+        rag_service = None
+        if profile.rag_enabled and profile.rag_api_token:
+            rag_service = RAGService(
+                base_url=profile.rag_base_url,
+                api_token=profile.rag_api_token,
+                dataset_name=profile.rag_dataset_name or "knowledge_base",
+                top_k=profile.rag_top_k,
+                min_score=profile.rag_min_score,
+            )
+            logger.info(f"[RAG] enabled for user_id={user.id}")
+
+        return cls(user, api_key=profile.api_key, model=default_model, rag_service=rag_service)
 
     @abstractmethod
     def _make_client(self):
@@ -182,19 +275,36 @@ class BaseLLMProvider(ABC):
         *,
         append_user: bool = False,
         user_message: str = "",
+        user_query: str = "",
     ) -> List[Dict[str, str]]:
         """
         把 ChatEntry 的 system_prompt + 历史 ChatMessage 组装成
-        OpenAI 兼容格式（role / content）。绝大多数厂商都吃这个格式，
-        少数特殊结构的厂商（如 Anthropic 旧版）自行覆写即可。
+        OpenAI 兼容格式（role / content）。
+
+        若用户启用了 RAG 知识库且当前对话 use_rag=True，
+        则先调用 Coze API 检索相关文档，将检索结果拼入 system prompt。
 
         :param append_user: 是否在末尾追加一条 user_message。
-                            chat_stream 视图已经提前把用户消息落库，
-                            调用 stream_chat 时传 False 即可，避免重复；
-                            chat（非流式）由 chat 函数自己决定。
+        :param user_query:  用于 RAG 检索的查询文本（通常即用户原始问题）。
         """
+        # 构建 system prompt，可能包含 RAG 检索结果
+        system_content = chat_entry.system_prompt
+
+        # RAG 检索增强：Provider 持 RAGService 且对话级开关开启时触发
+        if self._rag_service is not None and chat_entry.use_rag:
+            query = user_query or user_message
+            if query:
+                try:
+                    docs = self._rag_service.retrieve(query)
+                    if docs:
+                        rag_context = self._rag_service.format_context(docs)
+                        system_content = system_content + "\n\n" + rag_context
+                        logger.info(f"[RAG] context injected, chat_id={chat_entry.id} docs={len(docs)}")
+                except Exception as e:
+                    logger.warning(f"[RAG] skipped (error): {e}")
+
         messages: List[Dict[str, str]] = [
-            {"role": "system", "content": chat_entry.system_prompt}
+            {"role": "system", "content": system_content}
         ]
         for msg in chat_entry.messages.all():
             messages.append({"role": msg.role, "content": msg.content})
@@ -265,7 +375,7 @@ class QwenProvider(BaseLLMProvider):
         # ⚠️ chat_stream 视图已经在调用本方法前把 user_message 落库了，
         # 这里 append_user=False，避免在发给模型的 messages 里重复追加，
         # 那会污染上下文，并让 DashScope 日志看起来"被调了 2 次"。
-        messages = self._build_messages(chat_entry, append_user=False)
+        messages = self._build_messages(chat_entry, append_user=False, user_query=user_message)
 
         full_text_parts: List[str] = []
         stream = None
@@ -324,7 +434,7 @@ class QwenProvider(BaseLLMProvider):
         # 非流式入口：视图只保存用户消息后立即调用本方法，且不会重复构造上下文；
         # 为了与旧 chat_completion 行为一致，显式 append_user=True。
         messages = self._build_messages(
-            chat_entry, append_user=True, user_message=user_message
+            chat_entry, append_user=True, user_message=user_message, user_query=user_message
         )
 
         try:
@@ -409,7 +519,7 @@ class DeepSeekProvider(BaseLLMProvider):
         user_id = chat_entry.user.id
         logger.info(f"[DeepSeek 流式对话开始] chat_id={chat_entry_id} user_id={user_id}")
 
-        messages = self._build_messages(chat_entry, append_user=False)
+        messages = self._build_messages(chat_entry, append_user=False, user_query=user_message)
 
         full_text_parts = []
         stream = None
@@ -462,7 +572,7 @@ class DeepSeekProvider(BaseLLMProvider):
         logger.info(f"[DeepSeek 非流式对话开始] chat_id={chat_entry_id} user_id={user_id}")
 
         messages = self._build_messages(
-            chat_entry, append_user=True, user_message=user_message
+            chat_entry, append_user=True, user_message=user_message, user_query=user_message
         )
 
         try:
@@ -574,7 +684,7 @@ def stream_chat_completion(chat_entry: "ChatEntry", user_message: str):
             "其它厂商请改用 provider.stream_chat() 的事件生成器接口。"
         )
     messages = provider._build_messages(  # noqa: SLF001
-        chat_entry, append_user=True, user_message=user_message
+        chat_entry, append_user=True, user_message=user_message, user_query=user_message
     )
     try:
         return provider._client.chat.completions.create(  # noqa: SLF001
@@ -590,6 +700,7 @@ __all__ = [
     "BaseLLMProvider",
     "QwenProvider",
     "DeepSeekProvider",
+    "RAGService",
     # 工厂
     "get_llm_provider",
     "DEFAULT_PROVIDER_NAME",
