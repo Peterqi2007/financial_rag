@@ -335,7 +335,7 @@ ACCOUNTS_PROFILE_MODEL = "chat.UserProfile"
 # 保护用户个人资料，千万不能关
 ACCOUNTS_PROFILE_VIEWS_ENABLED = False
 ACCOUNTS_PROFILE_FORM_CLASS = "chat.forms.UserProfileForm"
-ACCOUNTS_PROFILE_FORM_EXCLUDE_FIELDS = ("privacy_password_hash","_api_key_encrypted",)
+ACCOUNTS_PROFILE_FORM_EXCLUDE_FIELDS = ("privacy_password_hash","_api_key_encrypted","_rag_api_token_encrypted")
 
 # 关闭Mezzanine默认前端框架
 MEZZANINE_USE_BOOTSTRAP = False
