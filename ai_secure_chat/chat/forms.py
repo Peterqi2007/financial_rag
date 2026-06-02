@@ -165,10 +165,30 @@ class UserProfileForm(MezzanineProfileForm):
         if self.instance and self.instance.pk:
             self.profile, _ = UserProfile.objects.get_or_create(user=self.instance)
 
+        # 添加 LLM 厂商选择
+        self.fields["llm_provider"] = forms.ChoiceField(
+            label="LLM 厂商",
+            choices=UserProfile._meta.get_field("llm_provider").choices,
+            initial=self.profile.llm_provider if self.profile else "qwen",
+            widget=forms.Select(attrs={"class": "form-select"}),
+        )
+
         # 添加你的业务字段
         self.fields["default_model"] = forms.ChoiceField(
             label="默认大模型",
-            choices=[('qwen-plus', '通义千问Plus'), ('gpt-3.5-turbo', 'GPT-3.5'), ('gpt-4', 'GPT-4')],
+            choices=[
+                # 千问系列
+                ("qwen-plus", "通义千问 Plus"),
+                ("qwen-turbo", "通义千问 Turbo"),
+                ("qwen-max", "通义千问 Max"),
+                # DeepSeek 系列
+                ("deepseek-v4-pro", "DeepSeek V4 Pro"),
+                ("deepseek-chat", "DeepSeek Chat"),
+                # OpenAI 系列
+                ("gpt-4o", "GPT-4o"),
+                ("gpt-4", "GPT-4"),
+                ("gpt-3.5-turbo", "GPT-3.5 Turbo"),
+            ],
             initial=self.profile.default_model if self.profile else "qwen-plus",
             widget=forms.Select(attrs={'class': 'form-select'})
         )
@@ -196,6 +216,8 @@ class UserProfileForm(MezzanineProfileForm):
         # 保存你的隐私配置
         profile, _ = UserProfile.objects.get_or_create(user=user)
         profile.default_model = self.cleaned_data.get("default_model")
+        # 保存 LLM 厂商选择
+        profile.llm_provider = self.cleaned_data.get("llm_provider", "qwen")
         profile.api_key = self.cleaned_data.get("api_key", "")
 
         # 加密保存隐私对话密码
