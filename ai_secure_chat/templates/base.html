@@ -1,0 +1,632 @@
+{% load i18n %}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AI Chat CMS · 大模型对话管理系统{% endblock %}</title>
+
+    {# Bootstrap 5：首选 jsDelivr，失败回退 bootcdn，永不让样式裸奔 #}
+    <link id="bs-css" rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          onerror="var f=document.createElement('link');f.rel='stylesheet';f.href='https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css';document.head.appendChild(f);">
+    {# Font Awesome，仅走 cloudflare CDN 取图标 #}
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* ========== 主题变量 ========== */
+        :root {
+            --brand-50:  #eaf3ff;
+            --brand-100: #d4e6ff;
+            --brand-300: #82b1ff;
+            --brand-500: #2f7bff;
+            --brand-600: #1f6bee;
+            --brand-700: #1755c7;
+            --ink-900: #0f172a;
+            --ink-700: #334155;
+            --ink-500: #64748b;
+            --ink-300: #cbd5e1;
+            --ink-100: #f1f5f9;
+            --glass-bg: rgba(255, 255, 255, 0.58);
+            --glass-bg-strong: rgba(255, 255, 255, 0.78);
+            --glass-border: rgba(255, 255, 255, 0.65);
+            --shadow-sm: 0 4px 16px rgba(31, 107, 238, 0.08);
+            --shadow-md: 0 10px 30px rgba(31, 107, 238, 0.12);
+            --radius-lg: 18px;
+            --radius-md: 12px;
+            --radius-sm: 8px;
+            --sidebar-w: 220px;
+            --header-h: 64px;
+            --footer-h: 56px;
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                         "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+                         sans-serif;
+            color: var(--ink-900);
+            line-height: 1.55;
+            /* 背景：多层柔和径向渐变，极轻，加载零开销 */
+            background:
+                radial-gradient(1200px 600px at 10% -10%, #d7e8ff 0%, transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, #c8dcff 0%, transparent 55%),
+                radial-gradient(800px 700px at 50% 120%, #e5efff 0%, transparent 60%),
+                #f5f8ff;
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+        a { color: var(--brand-600); text-decoration: none; }
+        a:hover { color: var(--brand-700); }
+
+        /* ========== 整体布局骨架 ========== */
+        .app-shell {
+            display: grid;
+            grid-template-rows: var(--header-h) 1fr var(--footer-h);
+            min-height: 100vh;
+        }
+        .app-body {
+            display: grid;
+            grid-template-columns: var(--sidebar-w) 1fr;
+            gap: 18px;
+            padding: 18px;
+            align-items: stretch;
+        }
+
+        /* ========== 玻璃卡片通用 ========== */
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: saturate(150%) blur(14px);
+            -webkit-backdrop-filter: saturate(150%) blur(14px);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-sm);
+        }
+        .glass-strong {
+            background: var(--glass-bg-strong);
+        }
+
+        /* ========== 顶部导航 ========== */
+        .app-header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 0 24px;
+            border-radius: 0;
+            border-left: none;
+            border-right: none;
+            border-top: none;
+        }
+        .brand {
+            display: flex;
+            align-items: baseline;
+            gap: 14px;
+            min-width: 0;
+        }
+        .brand-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--ink-900);
+        }
+        .brand-logo {
+            width: 34px; height: 34px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(31,107,238,.35);
+            transition: transform .2s ease, box-shadow .2s ease;
+        }
+        .brand-link:hover .brand-logo {
+            transform: translateY(-1px) rotate(-4deg);
+            box-shadow: 0 6px 16px rgba(31,107,238,.5);
+        }
+        .brand-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: .3px;
+            color: var(--ink-900);
+        }
+        .brand-subtitle {
+            font-size: 13px;
+            color: var(--ink-500);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 7px 14px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--brand-700);
+            background: rgba(255, 255, 255, 0.65);
+            border: 1px solid rgba(31, 107, 238, 0.18);
+            transition: all .18s ease;
+            cursor: pointer;
+        }
+        .nav-btn:hover {
+            background: rgba(31, 107, 238, 0.08);
+            border-color: rgba(31, 107, 238, 0.35);
+            color: var(--brand-700);
+            transform: translateY(-1px);
+        }
+        .nav-btn.primary {
+            color: #ffffff;
+            background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+            border-color: transparent;
+            box-shadow: 0 4px 12px rgba(31,107,238,.25);
+        }
+        .nav-btn.primary:hover {
+            box-shadow: 0 6px 16px rgba(31,107,238,.4);
+            filter: brightness(1.03);
+            color: #ffffff;
+        }
+        .user-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            font-size: 13px;
+            color: var(--ink-700);
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid var(--glass-border);
+            border-radius: 999px;
+            text-decoration: none;
+            transition: all .18s ease;
+            cursor: pointer;
+        }
+        a.user-chip:hover {
+            background: rgba(31, 107, 238, 0.10);
+            border-color: rgba(31, 107, 238, 0.35);
+            color: var(--brand-700);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(31,107,238,0.15);
+        }
+        a.user-chip:focus-visible {
+            outline: 2px solid var(--brand-500);
+            outline-offset: 2px;
+        }
+        .logout-form { display: inline; }
+        .logout-form button {
+            background: none;
+            border: 1px solid rgba(31, 107, 238, 0.18);
+            color: var(--brand-700);
+            padding: 7px 14px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all .18s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .logout-form button:hover {
+            background: rgba(31, 107, 238, 0.08);
+            border-color: rgba(31, 107, 238, 0.35);
+            transform: translateY(-1px);
+        }
+
+        /* ========== 侧边栏 ========== */
+        .app-sidebar {
+            border-radius: var(--radius-lg);
+            padding: 16px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-self: start;
+            position: sticky;
+            top: calc(var(--header-h) + 18px);
+            max-height: calc(100vh - var(--header-h) - 36px);
+        }
+        .sidebar-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--ink-500);
+            padding: 4px 10px 2px;
+        }
+        .sidebar-nav {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .sidebar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            color: var(--ink-700);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 500;
+            transition: all .15s ease;
+            position: relative;
+        }
+        .sidebar-item i {
+            width: 18px;
+            text-align: center;
+            color: var(--brand-500);
+            transition: transform .2s ease;
+        }
+        .sidebar-item:hover {
+            background: rgba(255, 255, 255, 0.7);
+            color: var(--brand-700);
+            transform: translateX(2px);
+        }
+        .sidebar-item:hover i { transform: scale(1.1); }
+        .sidebar-item.active {
+            background: linear-gradient(135deg, rgba(47,123,255,.14), rgba(31,107,238,.08));
+            color: var(--brand-700);
+            font-weight: 600;
+        }
+        .sidebar-item.active::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 20%; bottom: 20%;
+            width: 3px;
+            background: var(--brand-600);
+            border-radius: 3px;
+        }
+
+        /* ========== 主内容区 ========== */
+        .app-main {
+            border-radius: var(--radius-lg);
+            padding: 0;
+            min-width: 0;
+        }
+        .app-main > .main-card {
+            border-radius: var(--radius-lg);
+            padding: 24px;
+        }
+
+        /* ========== 页脚 ========== */
+        .app-footer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 24px;
+            color: var(--ink-500);
+            font-size: 13px;
+            border-left: none;
+            border-right: none;
+            border-bottom: none;
+        }
+        .app-footer a {
+            color: var(--brand-600);
+            margin: 0 4px;
+        }
+
+        /* ========== Django messages ========== */
+        .msg-stack { position: fixed; top: 80px; right: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+        .msg-item {
+            padding: 10px 16px;
+            border-radius: var(--radius-md);
+            background: var(--glass-bg-strong);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-sm);
+            font-size: 14px;
+            animation: msg-slide .25s ease-out;
+        }
+        .msg-item.success { border-left: 4px solid #22c55e; }
+        .msg-item.error,
+        .msg-item.danger  { border-left: 4px solid #ef4444; }
+        .msg-item.warning { border-left: 4px solid #f59e0b; }
+        .msg-item.info    { border-left: 4px solid var(--brand-500); }
+        @keyframes msg-slide {
+            from { opacity: 0; transform: translateX(10px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        /* ========== 全局 Bootstrap 组件皮肤（蓝白玻璃化） ========== */
+        /* 所有继承 base 的页面都自动获得统一风格，页面本身 HTML 可保持不动。 */
+
+        /* 主内容区统一"主卡片"——大多数页面的 .container 会被这层包住 */
+        .app-main .container,
+        .app-main .container-fluid {
+            background: var(--glass-bg-strong);
+            backdrop-filter: saturate(150%) blur(14px);
+            -webkit-backdrop-filter: saturate(150%) blur(14px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            padding: 24px 28px !important;
+            max-width: 100% !important;
+        }
+
+        /* 卡片：玻璃化 */
+        .app-main .card {
+            background: rgba(255, 255, 255, 0.72) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: var(--radius-md) !important;
+            box-shadow: 0 4px 14px rgba(31, 107, 238, 0.06);
+            transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .app-main .card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 22px rgba(31, 107, 238, 0.10);
+        }
+        .app-main .card-header {
+            background: linear-gradient(135deg, rgba(47,123,255,.10), rgba(31,107,238,.04)) !important;
+            border-bottom: 1px solid var(--glass-border) !important;
+            color: var(--brand-700) !important;
+            font-weight: 600;
+        }
+        .app-main .card-header.bg-primary,
+        .app-main .card-header.bg-gradient.bg-primary,
+        .app-main .card-header.bg-primary.bg-gradient {
+            background: linear-gradient(135deg, var(--brand-500), var(--brand-700)) !important;
+            color: #ffffff !important;
+            border: none !important;
+        }
+        .app-main .card-header.bg-success.bg-opacity-10 {
+            background: linear-gradient(135deg, rgba(34,197,94,.12), rgba(22,163,74,.04)) !important;
+            color: #15803d !important;
+        }
+        .app-main .card-header.bg-primary.bg-opacity-10 {
+            background: linear-gradient(135deg, rgba(47,123,255,.14), rgba(31,107,238,.04)) !important;
+            color: var(--brand-700) !important;
+        }
+
+        /* 按钮：所有 .btn 悬浮上抬，主色用品牌蓝，辅色用柔和玻璃 */
+        .app-main .btn {
+            border-radius: var(--radius-sm);
+            font-weight: 500;
+            transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+        }
+        .app-main .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(31, 107, 238, 0.14);
+        }
+        .app-main .btn-primary {
+            background: linear-gradient(135deg, var(--brand-500), var(--brand-700)) !important;
+            border-color: transparent !important;
+            box-shadow: 0 2px 8px rgba(31,107,238,.25);
+        }
+        .app-main .btn-primary:hover {
+            background: linear-gradient(135deg, var(--brand-600), var(--brand-700)) !important;
+            box-shadow: 0 6px 16px rgba(31,107,238,.35);
+        }
+        .app-main .btn-outline-primary {
+            color: var(--brand-700) !important;
+            border-color: rgba(31,107,238,.35) !important;
+            background: rgba(255,255,255,.5);
+        }
+        .app-main .btn-outline-primary:hover {
+            background: rgba(31,107,238,.08) !important;
+            color: var(--brand-700) !important;
+        }
+        .app-main .btn-secondary,
+        .app-main .btn-outline-secondary {
+            color: var(--ink-700) !important;
+            background: rgba(255,255,255,.6) !important;
+            border: 1px solid var(--ink-300) !important;
+        }
+        .app-main .btn-secondary:hover,
+        .app-main .btn-outline-secondary:hover {
+            background: rgba(255,255,255,.85) !important;
+            color: var(--ink-900) !important;
+            border-color: var(--ink-500) !important;
+        }
+        .app-main .btn-success {
+            background: linear-gradient(135deg, #34d399, #059669) !important;
+            border-color: transparent !important;
+        }
+        .app-main .btn-outline-success {
+            color: #047857 !important;
+            border-color: rgba(5,150,105,.35) !important;
+            background: rgba(255,255,255,.5);
+        }
+        .app-main .btn-outline-success:hover {
+            background: rgba(5,150,105,.08) !important;
+            color: #047857 !important;
+        }
+        .app-main .btn-warning {
+            background: linear-gradient(135deg, #fbbf24, #d97706) !important;
+            border-color: transparent !important;
+            color: #ffffff !important;
+        }
+        .app-main .btn-danger {
+            background: linear-gradient(135deg, #f87171, #dc2626) !important;
+            border-color: transparent !important;
+            color: #ffffff !important;
+        }
+        .app-main .btn-info {
+            background: linear-gradient(135deg, #60a5fa, #2563eb) !important;
+            border-color: transparent !important;
+            color: #ffffff !important;
+        }
+
+        /* 徽章 */
+        .app-main .badge.bg-primary {
+            background: linear-gradient(135deg, var(--brand-500), var(--brand-700)) !important;
+        }
+        .app-main .badge.bg-success { background: linear-gradient(135deg, #34d399, #059669) !important; }
+        .app-main .badge.bg-info    { background: linear-gradient(135deg, #60a5fa, #2563eb) !important; }
+        .app-main .badge.bg-danger  { background: linear-gradient(135deg, #f87171, #dc2626) !important; }
+        .app-main .badge.bg-warning { background: linear-gradient(135deg, #fbbf24, #d97706) !important; color: #fff !important; }
+
+        /* 表单输入：圆角玻璃 */
+        .app-main .form-control,
+        .app-main .form-select,
+        .app-main input[type="text"],
+        .app-main input[type="email"],
+        .app-main input[type="password"],
+        .app-main input[type="number"],
+        .app-main textarea,
+        .app-main select {
+            background: rgba(255,255,255,.75) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: var(--radius-sm) !important;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .app-main .form-control:focus,
+        .app-main .form-select:focus,
+        .app-main input:focus,
+        .app-main textarea:focus,
+        .app-main select:focus {
+            border-color: var(--brand-500) !important;
+            box-shadow: 0 0 0 3px rgba(47,123,255,.18) !important;
+            outline: none !important;
+        }
+        .app-main label {
+            font-weight: 500;
+            color: var(--ink-700);
+        }
+        /* Django form `.as_p` 的默认 p 间距太紧，优化一下 */
+        .app-main form p { margin-bottom: 14px; }
+        .app-main form p label { display: inline-block; margin-bottom: 6px; }
+
+        /* 列表 */
+        .app-main .list-group-item {
+            background: rgba(255,255,255,.6) !important;
+            border: 1px solid var(--glass-border) !important;
+            transition: background .15s ease, transform .15s ease;
+        }
+        .app-main .list-group-item:hover {
+            background: rgba(255,255,255,.85) !important;
+            transform: translateX(2px);
+        }
+
+        /* 提示条 */
+        .app-main .alert { border-radius: var(--radius-md); border: 1px solid var(--glass-border); }
+        .app-main .alert-info {
+            background: linear-gradient(135deg, rgba(47,123,255,.10), rgba(47,123,255,.04)) !important;
+            color: var(--brand-700) !important;
+            border-color: rgba(47,123,255,.25) !important;
+        }
+
+        /* 标题主色 */
+        .app-main .text-primary { color: var(--brand-700) !important; }
+        .app-main h1, .app-main h2, .app-main h3, .app-main h4, .app-main h5, .app-main h6 {
+            color: var(--ink-900);
+        }
+        .app-main hr { border-color: var(--ink-300); opacity: .6; }
+
+        /* ========== 响应式：窄屏把侧栏折到顶部 ========== */
+        @media (max-width: 900px) {
+            .app-body { grid-template-columns: 1fr; }
+            .app-sidebar { position: static; max-height: none; flex-direction: row; overflow-x: auto; }
+            .sidebar-title { display: none; }
+            .sidebar-nav { flex-direction: row; }
+            .brand-subtitle { display: none; }
+        }
+        @media (max-width: 540px) {
+            .nav-btn span, .logout-form button span { display: none; }
+            .app-header { padding: 0 14px; }
+        }
+    </style>
+
+    {% block extra_head %}{% endblock %}
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<div class="app-shell">
+
+    {# ========== 顶部导航栏 ========== #}
+    <header class="app-header glass">
+        <div class="brand">
+            <a href="{% url 'home' %}" class="brand-link" aria-label="返回首页">
+                <span class="brand-logo"><i class="fa-solid fa-robot"></i></span>
+                <span class="brand-title">AI Chat CMS</span>
+            </a>
+            <span class="brand-subtitle">Structured · Secure · Smart — LLM 对话管理系统</span>
+        </div>
+
+        <nav class="nav-actions" aria-label="账户操作">
+            {% if request.user.is_authenticated %}
+                <a class="user-chip" href="{% url 'profile_update' %}"
+                   title="查看 / 编辑资料 — {{ request.user.username }}">
+                    <i class="fa-solid fa-user-astronaut"></i>
+                    <span>{{ request.user.username }}</span>
+                </a>
+                <form method="post" action="{% url 'logout' %}" class="logout-form">
+                    {% csrf_token %}
+                    <button type="submit" aria-label="登出">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                        <span>登出</span>
+                    </button>
+                </form>
+            {% else %}
+                <a class="nav-btn" href="{% url 'login' %}">
+                    <i class="fa-solid fa-right-to-bracket"></i>
+                    <span>登录</span>
+                </a>
+                <a class="nav-btn primary" href="{% url 'signup' %}">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>注册</span>
+                </a>
+            {% endif %}
+        </nav>
+    </header>
+
+    {# ========== 中部：侧边栏 + 主内容 ========== #}
+    <div class="app-body">
+
+        <aside class="app-sidebar glass" aria-label="主导航">
+            <div class="sidebar-title">导航</div>
+            <nav class="sidebar-nav">
+                {# 单一入口。后续扩展只需复制一个 <a class="sidebar-item">...</a> 即可 #}
+                <a class="sidebar-item {% if 'categories' in request.path or 'chat' in request.path %}active{% endif %}"
+                   href="{% url 'chat:category_list' %}">
+                    <i class="fa-solid fa-comments"></i>
+                    <span>AI 聊天</span>
+                </a>
+            </nav>
+        </aside>
+
+        <main class="app-main">
+            {% block main %}{% endblock %}
+        </main>
+    </div>
+
+    {# ========== 页脚 ========== #}
+    <footer class="app-footer glass">
+        <span>© 2026 AI Chat CMS · 让对话 <a href="{% url 'home' %}">更有序、更安全、更智能</a></span>
+    </footer>
+</div>
+
+{# 非阻塞的消息提示（如果有） #}
+{% if messages %}
+<div class="msg-stack" id="msgStack">
+    {% for message in messages %}
+        <div class="msg-item {{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+</div>
+<script>
+    // 5 秒后渐隐移除，零依赖
+    setTimeout(() => {
+        const stack = document.getElementById('msgStack');
+        if (stack) stack.style.transition = 'opacity .4s ease', stack.style.opacity = '0';
+        setTimeout(() => stack && stack.remove(), 500);
+    }, 5000);
+</script>
+{% endif %}
+
+{# Bootstrap JS 只在确实需要组件（下拉、modal、tooltip 等）的子页面里用到才加载 #}
+<script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+{% block extra_js %}{% endblock %}
+</body>
+</html>

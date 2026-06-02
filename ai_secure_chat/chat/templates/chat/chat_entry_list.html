@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}关键字「{{ current_keyword }}」的对话{% endblock %}
+
+{% block main %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h3 class="text-primary fw-bold mb-1">
+                <i class="fa-solid fa-magnifying-glass me-2"></i>关键字「{{ current_keyword }}」
+            </h3>
+            <div class="text-muted small">以下是包含该关键字的所有对话。</div>
+        </div>
+        <a href="{% url 'chat:folder_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fa-solid fa-arrow-left me-1"></i> 返回文件夹
+        </a>
+    </div>
+
+    {% if entries %}
+        <div class="card">
+            <ul class="list-group list-group-flush">
+                {% for entry in entries %}
+                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <a href="{% url 'chat:chat_entry_info' entry.id %}" class="text-decoration-none">
+                        <i class="fa-regular fa-comment text-primary me-2"></i>{{ entry.title }}
+                    </a>
+                    <span class="text-muted small">
+                        <i class="fa-regular fa-calendar me-1"></i>{{ entry.created_at|date:"Y-m-d" }}
+                    </span>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            <i class="fa-solid fa-circle-info me-1"></i>暂无匹配的对话
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

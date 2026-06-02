@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% load mezzanine_tags %}
+
+{% block title %}AI Chat CMS · 首页{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ========== 首页专属装饰 ========== */
+    .home-hero {
+        border-radius: 22px;
+        padding: 48px 40px;
+        position: relative;
+        overflow: hidden;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,.55), rgba(255,255,255,.25));
+        backdrop-filter: saturate(160%) blur(16px);
+        -webkit-backdrop-filter: saturate(160%) blur(16px);
+        border: 1px solid rgba(255,255,255,.6);
+        box-shadow: 0 14px 40px rgba(31,107,238,.12);
+    }
+    .home-hero::before,
+    .home-hero::after {
+        content: '';
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(60px);
+        pointer-events: none;
+        z-index: 0;
+    }
+    .home-hero::before {
+        top: -80px; right: -80px;
+        width: 260px; height: 260px;
+        background: radial-gradient(circle at 30% 30%, #7aa9ff, transparent 70%);
+    }
+    .home-hero::after {
+        bottom: -100px; left: -80px;
+        width: 300px; height: 300px;
+        background: radial-gradient(circle at 70% 70%, #b7d0ff, transparent 70%);
+    }
+    .home-hero-inner { position: relative; z-index: 1; }
+    .home-eyebrow {
+        display: inline-block;
+        padding: 4px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        color: var(--brand-700);
+        background: rgba(31,107,238,.10);
+        border: 1px solid rgba(31,107,238,.18);
+        border-radius: 999px;
+    }
+    .home-title {
+        margin: 16px 0 10px;
+        font-size: clamp(32px, 4vw, 44px);
+        font-weight: 700;
+        letter-spacing: -.02em;
+        color: var(--ink-900);
+        line-height: 1.15;
+    }
+    .home-title .accent {
+        background: linear-gradient(120deg, var(--brand-500), var(--brand-700));
+        -webkit-background-clip: text;
+                background-clip: text;
+        color: transparent;
+    }
+    .home-subtitle {
+        max-width: 640px;
+        font-size: 16px;
+        color: var(--ink-700);
+        margin-bottom: 28px;
+    }
+    .home-ctas {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .home-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 22px;
+        border-radius: 999px;
+        font-weight: 600;
+        font-size: 15px;
+        border: 1px solid transparent;
+        transition: all .2s ease;
+    }
+    .home-cta.primary {
+        color: #fff;
+        background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+        box-shadow: 0 8px 20px rgba(31,107,238,.28);
+    }
+    .home-cta.primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 26px rgba(31,107,238,.38);
+        color: #fff;
+    }
+    .home-cta.ghost {
+        color: var(--brand-700);
+        background: rgba(255,255,255,.6);
+        border-color: rgba(31,107,238,.25);
+    }
+    .home-cta.ghost:hover {
+        background: rgba(31,107,238,.08);
+        transform: translateY(-2px);
+    }
+
+    /* ========== 特性卡片 ========== */
+    .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 28px;
+    }
+    .feature-card {
+        padding: 20px;
+        border-radius: 16px;
+        background: rgba(255,255,255,.55);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255,255,255,.7);
+        transition: all .2s ease;
+    }
+    .feature-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 24px rgba(31,107,238,.14);
+        border-color: rgba(31,107,238,.2);
+    }
+    .feature-icon {
+        width: 40px; height: 40px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+        box-shadow: 0 4px 10px rgba(31,107,238,.25);
+        margin-bottom: 12px;
+        font-size: 16px;
+    }
+    .feature-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--ink-900);
+        margin-bottom: 4px;
+    }
+    .feature-desc {
+        font-size: 13px;
+        color: var(--ink-500);
+        line-height: 1.55;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="home-hero">
+    <div class="home-hero-inner">
+        <span class="home-eyebrow">AI Chat CMS</span>
+        <h1 class="home-title">
+            让大模型对话，<br>
+            变得 <span class="accent">有序、安全、智能</span>
+        </h1>
+        <p class="home-subtitle">
+            Structured, Secure, Smart — 一个围绕 LLM 的对话管理系统。
+            分类归档、隐私加密、多轮上下文、流式 Markdown 渲染，
+            把你的 AI 对话沉淀成可检索的个人知识资产。
+        </p>
+
+        <div class="home-ctas">
+            {% if request.user.is_authenticated %}
+                <a class="home-cta primary" href="{% url 'chat:category_list' %}">
+                    <i class="fa-solid fa-comments"></i> 进入对话系统
+                </a>
+                <a class="home-cta ghost" href="{% url 'logout' %}" onclick="event.preventDefault(); document.getElementById('home-logout-form').submit();">
+                    <i class="fa-solid fa-right-from-bracket"></i> 登出
+                </a>
+                <form id="home-logout-form" method="post" action="{% url 'logout' %}" style="display:none;">
+                    {% csrf_token %}
+                </form>
+            {% else %}
+                <a class="home-cta primary" href="{% url 'login' %}">
+                    <i class="fa-solid fa-right-to-bracket"></i> 立即登录
+                </a>
+                <a class="home-cta ghost" href="{% url 'signup' %}">
+                    <i class="fa-solid fa-user-plus"></i> 创建账号
+                </a>
+            {% endif %}
+        </div>
+
+        <div class="feature-grid">
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-folder-tree"></i></div>
+                <div class="feature-title">分类归档</div>
+                <div class="feature-desc">分类 / 文件夹 / 对话三层结构，上下文不再散落。</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                <div class="feature-title">对话控制访问</div>
+                <div class="feature-desc">隐私对话强制密码输入。API Key，登录密码，隐私密码分离加密存储。</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-bolt"></i></div>
+                <div class="feature-title">流式 Markdown</div>
+                <div class="feature-desc">SSE 流式渲染，边说边到；表格、代码块、列表原样展示。</div>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon"><i class="fa-solid fa-gears"></i></div>
+                <div class="feature-title">可配置模型参数</div>
+                <div class="feature-desc">temperature / top_p / system prompt 每个对话各自保存。</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

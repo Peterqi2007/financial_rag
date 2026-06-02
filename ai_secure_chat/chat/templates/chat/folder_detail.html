@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ parent_folder.name }} · 文件夹详情{% endblock %}
+
+{% block main %}
+<div class="container py-4">
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h3 class="text-primary fw-bold mb-1">
+                <i class="fa-solid fa-folder-open me-2"></i>{{ parent_folder.name }}
+            </h3>
+            <div class="text-muted small">
+                <i class="fa-solid fa-tag me-1"></i>所属分类：{{ category.name }}
+            </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{% url 'chat:folder_list' category.id %}" class="btn btn-outline-secondary btn-sm">
+                <i class="fa-solid fa-arrow-left me-1"></i> 返回根文件夹
+            </a>
+            <a href="javascript:history.back()" class="btn btn-outline-secondary btn-sm">
+                <i class="fa-solid fa-rotate-left me-1"></i> 返回上一页
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-4 mb-4">
+        {# 子文件夹卡片 #}
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header bg-primary bg-opacity-10">
+                    <i class="fa-solid fa-folder-plus me-2"></i>子文件夹
+                </div>
+                <div class="card-body">
+                    {% if subfolders %}
+                        <div class="d-flex flex-column gap-2">
+                            {% for sub in subfolders %}
+                            <a href="{% url 'chat:folder_detail' category.id sub.id %}"
+                               class="btn btn-outline-primary text-start">
+                                <i class="fa-solid fa-folder me-2"></i>{{ sub.name }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4 text-muted">
+                            <i class="fa-solid fa-folder-open fs-3 mb-2 d-block"></i>
+                            暂无子文件夹
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {# 对话列表卡片 #}
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-header bg-success bg-opacity-10">
+                    <i class="fa-solid fa-comments me-2"></i>对话列表
+                </div>
+                <div class="card-body">
+                    {% if chat_entries %}
+                        <div class="d-flex flex-column gap-2">
+                            {% for chat in chat_entries %}
+                            <a href="{% url 'chat:chat_entry_info' chat.id %}"
+                               class="btn btn-outline-success text-start">
+                                <i class="fa-regular fa-comment me-2"></i>{{ chat.title }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="text-center py-4 text-muted">
+                            <i class="fa-regular fa-comment-dots fs-3 mb-2 d-block"></i>
+                            暂无对话记录
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# 操作按钮 #}
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="{% url 'chat:folder_create' %}?category_id={{ category.id }}&parent_folder_id={{ parent_folder.id }}"
+           class="btn btn-primary">
+            <i class="fa-solid fa-folder-plus me-1"></i> 新建子文件夹
+        </a>
+        <a href="{% url 'chat:chat_entry_create' %}?folder_id={{ parent_folder.id }}"
+           class="btn btn-success">
+            <i class="fa-solid fa-comment-medical me-1"></i> 新建对话
+        </a>
+        <a href="{% url 'chat:folder_update' parent_folder.id %}"
+           class="btn btn-warning">
+            <i class="fa-solid fa-pen me-1"></i> 编辑文件夹
+        </a>
+        <a href="{% url 'chat:folder_delete' parent_folder.id %}"
+           onclick="return confirm('确定要删除该文件夹吗？删除后文件夹内的所有内容将一并删除！')"
+           class="btn btn-danger">
+            <i class="fa-solid fa-trash me-1"></i> 删除文件夹
+        </a>
+    </div>
+</div>
+{% endblock %}

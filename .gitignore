@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.db
+
+# Django
+**/local_settings.py
+
+# Static & Media (generated)
+ai_secure_chat/static/
+ai_secure_chat/media/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.idea/
+.DS_Store
+
+# Coverage
+.coverage
+htmlcov/
+
+# Environment
+.env
+
+# Logs
+*.log
+
+# Database
+db.sqlite3
+
+# CodeWhale
+.codewhale/

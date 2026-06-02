@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ chat_entry.title }}</title>
+    <!-- Bootstrap 5：首选 jsDelivr，bootcdn 挂的时候切回备用 -->
+    <link id="bs-primary" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          onerror="var f=document.createElement('link');f.rel='stylesheet';f.href='https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css';document.head.appendChild(f);">
+    <!-- Markdown 渲染：marked 解析 + DOMPurify 防 XSS -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+    <style>
+        * {margin: 0;padding: 0;box-sizing: border-box;}
+        body {background-color: #f5f7fa;padding: 20px;}
+
+        /* ===== 返回按钮（独立样式，不依赖 Bootstrap 能否加载） ===== */
+        .back-btn {margin-bottom: 15px;}
+        .back-btn a {
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 14px;
+            color: #6c757d;
+            background: #ffffff;
+            border: 1px solid #6c757d;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: all .15s ease;
+        }
+        .back-btn a:hover {
+            background: #6c757d;
+            color: #ffffff;
+        }
+
+        .chat-container {
+            height: calc(100vh - 180px);
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 25px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        .chat-bubble {
+            max-width: 75%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            font-size: 15px;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+        .user-bubble {
+            background-color: #0d6efd;
+            color: white;
+            margin-left: auto;
+            border-bottom-right-radius: 4px;
+        }
+        .ai-bubble {
+            background-color: #e9ecef;
+            color: #212529;
+            margin-right: auto;
+            border-bottom-left-radius: 4px;
+        }
+        .loading-bubble {
+            display: none;
+            background-color: #e9ecef;
+            color: #6c757d;
+            margin-right: auto;
+            padding: 12px 18px;
+            border-radius: 18px;
+            max-width: 75%;
+        }
+        .chat-input {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+
+        /* ===== 输入框（独立样式，避免 Bootstrap 掉线时退回默认方框） ===== */
+        #userMessage {
+            flex: 1;
+            border-radius: 24px;
+            padding: 12px 20px;
+            border: 1px solid #dee2e6;
+            background-color: #ffffff;
+            color: #212529;
+            font-size: 15px;
+            line-height: 1.5;
+            resize: none;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        #userMessage:focus {
+            border-color: #86b7fe;
+            box-shadow: 0 0 0 0.25rem rgba(13,110,253,.25);
+        }
+        #userMessage::placeholder {
+            color: #adb5bd;
+        }
+
+        /* ===== 发送按钮（独立样式，保证在 Bootstrap 掉线时也是蓝色圆角） ===== */
+        .send-btn {
+            border-radius: 24px;
+            padding: 12px 24px;
+            font-size: 15px;
+            color: #ffffff;
+            background-color: #0d6efd;
+            border: 1px solid #0d6efd;
+            cursor: pointer;
+            transition: background-color .15s ease, border-color .15s ease;
+        }
+        .send-btn:hover:not(:disabled) {
+            background-color: #0b5ed7;
+            border-color: #0a58ca;
+        }
+        .send-btn:disabled {
+            opacity: .65;
+            cursor: not-allowed;
+        }
+
+        /* ===== 气泡内 Markdown 元素排版（仅作用于 AI 气泡里经 marked 渲染的 HTML） ===== */
+        .chat-bubble p { margin: 0 0 8px 0; }
+        .chat-bubble p:last-child { margin-bottom: 0; }
+        .chat-bubble ul,
+        .chat-bubble ol {
+            margin: 4px 0 8px 0;
+            padding-left: 24px;
+        }
+        .chat-bubble li { margin: 2px 0; line-height: 1.5; }
+        .chat-bubble h1,
+        .chat-bubble h2,
+        .chat-bubble h3,
+        .chat-bubble h4,
+        .chat-bubble h5,
+        .chat-bubble h6 {
+            margin: 8px 0 6px 0;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+        .chat-bubble h1 { font-size: 1.3em; }
+        .chat-bubble h2 { font-size: 1.2em; }
+        .chat-bubble h3 { font-size: 1.1em; }
+        .chat-bubble h4,
+        .chat-bubble h5,
+        .chat-bubble h6 { font-size: 1em; }
+        .chat-bubble strong { font-weight: 600; }
+        .chat-bubble em { font-style: italic; }
+        .chat-bubble code {
+            padding: 1px 6px;
+            background: rgba(0,0,0,0.08);
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.92em;
+        }
+        .chat-bubble pre {
+            margin: 6px 0;
+            padding: 10px 12px;
+            background: #0b1021;
+            color: #e6edf3;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .chat-bubble pre code {
+            padding: 0;
+            background: transparent;
+            color: inherit;
+            font-size: 0.9em;
+        }
+        .chat-bubble blockquote {
+            margin: 6px 0;
+            padding: 4px 12px;
+            border-left: 3px solid rgba(0,0,0,0.2);
+            color: inherit;
+            background: rgba(0,0,0,0.03);
+            border-radius: 0 6px 6px 0;
+        }
+        .chat-bubble a {
+            color: inherit;
+            text-decoration: underline;
+        }
+        .chat-bubble table {
+            border-collapse: collapse;
+            margin: 6px 0;
+        }
+        .chat-bubble th,
+        .chat-bubble td {
+            border: 1px solid rgba(0,0,0,0.15);
+            padding: 4px 8px;
+        }
+        /* 用户气泡是蓝底白字，代码块的深色背景在蓝底上太突兀，特别覆盖一下 */
+        .user-bubble code {
+            background: rgba(255,255,255,0.25);
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body>
+    <!-- 返回按钮（修复URL） -->
+    <div class="back-btn">
+        <a href="{% url 'chat:chat_entry_info' chat_entry.id %}" class="btn btn-outline-secondary btn-sm">
+            ← 返回对话信息
+        </a>
+    </div>
+
+    <!-- 聊天容器 -->
+    <div class="chat-container" id="chatContainer">
+        {% for message in chat_messages %}
+            {% if message.role == "user" %}
+                <div class="chat-bubble user-bubble">{{ message.content }}</div>
+            {% else %}
+                <div class="chat-bubble ai-bubble">{{ message.content }}</div>
+            {% endif %}
+        {% empty %}
+            <div class="text-center text-muted my-5">开始你的对话吧～</div>
+        {% endfor %}
+        <div class="loading-bubble" id="loadingBubble">AI 正在思考中...</div>
+    </div>
+
+    <!-- 输入表单 -->
+    <form class="chat-input" id="chatForm">
+        {% csrf_token %}
+        <textarea class="form-control flex-grow-1" id="userMessage" name="message" placeholder="输入消息..." rows="1" required></textarea>
+        <button type="button" id="sendBtn" class="btn btn-primary send-btn">发送</button>
+    </form>
+
+    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    <script>
+    const chatForm = document.getElementById('chatForm');
+    const userMessage = document.getElementById('userMessage');
+    const chatContainer = document.getElementById('chatContainer');
+    const loadingBubble = document.getElementById('loadingBubble');
+    const sendBtn = document.getElementById('sendBtn');
+
+    // 发送锁：防止 Enter / 点击 / 表单默认行为等任何路径导致的重复请求
+    let isSending = false;
+
+    // ========== Markdown 渲染工具 ==========
+    // marked 开启 GFM + 单行换行（breaks:true）：这样数据库里存的 '\n' 会变成 <br>，
+    // '**bold**' / '- item' / '```code```' 等 Markdown 语法都能正确渲染。
+    if (window.marked && marked.setOptions) {
+        marked.setOptions({ gfm: true, breaks: true });
+    }
+
+    // AI 气泡：走 Markdown，经过 DOMPurify 清洗防 XSS
+    function renderAi(rawText) {
+        const text = rawText == null ? '' : String(rawText);
+        if (window.marked && window.DOMPurify) {
+            const html = marked.parse(text);
+            return DOMPurify.sanitize(html);
+        }
+        // 兜底：CDN 没加载时至少保留换行
+        return escapeHtml(text).replace(/\n/g, '<br>');
+    }
+
+    // 用户气泡：不跑 markdown（避免把用户打的 *星号* 变成斜体），只保留换行
+    function renderUser(rawText) {
+        const text = rawText == null ? '' : String(rawText);
+        return escapeHtml(text).replace(/\n/g, '<br>');
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+    }
+
+    // ========== 核心1：处理Enter键逻辑（保留发送+Shift换行） ==========
+    userMessage.addEventListener('keydown', (e) => {
+        // 纯Enter键（未按Shift）：发送消息
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault(); // 阻止默认换行行为
+            sendMessage();      // 直接调用同一发送函数，不走 form submit
+        }
+        // Shift+Enter：允许换行并自适应文本框高度
+        else if (e.key === 'Enter' && e.shiftKey) {
+            e.preventDefault(); // 阻止默认行为，手动添加换行
+            const cursorPos = userMessage.selectionStart;
+            const currentValue = userMessage.value;
+            // 插入换行符
+            userMessage.value = currentValue.substring(0, cursorPos) + '\n' + currentValue.substring(cursorPos);
+            // 重置光标位置
+            userMessage.selectionStart = userMessage.selectionEnd = cursorPos + 1;
+            // 自适应文本框高度
+            userMessage.rows = Math.min(userMessage.scrollHeight / 20, 6) || 1; // 限制最大行数
+        }
+    });
+
+    // 点击按钮发送（按钮是 type="button"，不会触发 form 原生提交）
+    sendBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        sendMessage();
+    });
+
+    // ========== 核心2：优化消息添加逻辑 ==========
+    function addMessage(text, isUser = false) {
+        if (!text || text.trim() === '') return; // 过滤空消息
+        const div = document.createElement('div');
+        div.className = isUser ? 'chat-bubble user-bubble' : 'chat-bubble ai-bubble';
+        // 用户消息保持原样（只转换行）；AI 消息走 Markdown
+        div.innerHTML = isUser ? renderUser(text) : renderAi(text);
+        chatContainer.appendChild(div);
+        // 强制滚动到底部（确保消息可见）
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    // 创建一个空的 AI 气泡，返回 div 句柄供流式 append
+    function createAiBubble() {
+        const div = document.createElement('div');
+        div.className = 'chat-bubble ai-bubble';
+        div.innerHTML = '';
+        chatContainer.appendChild(div);
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+        return div;
+    }
+
+    // ========== 核心3：统一发送函数 ==========
+    // 被上面的 Enter keydown 和 sendBtn click 同时调用。
+    // 顶部 isSending 锁保证同一时刻只有一条正在流的请求；
+    // 这个函数本身不是 form.onsubmit，所以浏览器不会再偷偷触发一次原生提交。
+    async function sendMessage() {
+        console.log('[sendMessage] 调用时间=', new Date().toISOString(), 'isSending=', isSending);
+        if (isSending) return;               // 并发锁，点多快只发一次
+        const msg = userMessage.value.trim();
+        if (!msg) return;
+
+        isSending = true;
+        sendBtn.disabled = true;
+
+        // 1. 用户消息气泡
+        addMessage(msg, true);
+        userMessage.value = '';
+        userMessage.rows = 1;
+        loadingBubble.style.display = 'block';
+
+        const formData = new FormData();
+        formData.append('message', msg);
+        formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+        let aiBubble = null;         // 懒创建，第一段文字到了才 new
+        let fullText = '';
+
+        try {
+            const res = await fetch("{% url 'chat:chat_stream' chat_entry.id %}", {
+                method: 'POST',
+                body: formData,
+                credentials: 'include',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                // SSE 以空行分割一个事件
+                let idx;
+                while ((idx = buffer.indexOf('\n\n')) >= 0) {
+                    const rawEvent = buffer.slice(0, idx);
+                    buffer = buffer.slice(idx + 2);
+
+                    // 忽略注释行（以 ':' 开头，比如服务端的 ping）
+                    const lines = rawEvent.split('\n').filter(l => !l.startsWith(':'));
+                    let eventName = 'message';
+                    let dataStr = '';
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) eventName = line.slice(6).trim();
+                        else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
+                    }
+                    if (!dataStr) continue;
+
+                    let payload;
+                    try { payload = JSON.parse(dataStr); }
+                    catch (e) { console.warn('SSE JSON 解析失败:', dataStr); continue; }
+
+                    if (eventName === 'done') {
+                        console.log('[SSE] 流结束', payload);
+                        continue;
+                    }
+                    if (payload.error) {
+                        loadingBubble.style.display = 'none';
+                        if (!aiBubble) aiBubble = createAiBubble();
+                        aiBubble.innerHTML += `<span style="color:#dc3545;">[错误] ${payload.error}</span>`;
+                        continue;
+                    }
+                    if (payload.content) {
+                        loadingBubble.style.display = 'none';
+                        if (!aiBubble) aiBubble = createAiBubble();
+                        fullText += payload.content;
+                        // 流式阶段每次把累积的完整文本重新 Markdown 渲染
+                        aiBubble.innerHTML = renderAi(fullText);
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                }
+            }
+        } catch (err) {
+            loadingBubble.style.display = 'none';
+            addMessage(`网络/解析错误：${err.message}`, false);
+            console.error('请求异常：', err);
+        } finally {
+            // 一定要释放锁 & 恢复按钮，不然一次之后永远发不出去
+            isSending = false;
+            sendBtn.disabled = false;
+            loadingBubble.style.display = 'none';
+        }
+    }
+
+
+    // ========== 初始化：把 Django 模板直出的历史消息重新渲染 ==========
+    // Django 模板 `{{ message.content }}` 会做 HTML 转义但不会把 '\n' 转成 <br>，
+    // 也不会解析 Markdown。这里读 textContent（拿到原始文本，'\n' 仍是 '\n'），
+    // 再用 renderAi / renderUser 回写 innerHTML，这样「退出重进后」看到的排版
+    // 和「流式阶段」完全一致：换行保留、Markdown 渲染到位。
+    function rerenderHistory() {
+        document.querySelectorAll('.chat-bubble.ai-bubble').forEach((el) => {
+            const raw = el.textContent;
+            el.innerHTML = renderAi(raw);
+        });
+        document.querySelectorAll('.chat-bubble.user-bubble').forEach((el) => {
+            const raw = el.textContent;
+            el.innerHTML = renderUser(raw);
+        });
+    }
+
+    // 初始化：重渲染历史 + 滚动到最新消息位置
+    window.onload = () => {
+        rerenderHistory();
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    };
+    </script>
+</body>
+</html>
