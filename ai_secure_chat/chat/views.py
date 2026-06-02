@@ -5,10 +5,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
 from django.urls import reverse
-from .models import Category, Folder, ChatEntry, UserProfile, ChatMessage, ModelConfig
+from .models import Category, Folder, ChatEntry, UserProfile, ChatMessage
 from .forms import (
     CategoryForm, FolderForm, ChatEntryForm,
-    PrivacyPasswordVerifyForm, ModelConfigForm,  # UserProfileForm
+    PrivacyPasswordVerifyForm, #UserProfileForm
 )
 # 保留你已有的流式对话视图
 from django.http import StreamingHttpResponse
@@ -562,98 +562,3 @@ def profile_edit(request):
     return render(request, 'chat/profile_edit.html', {'form': form, 'title': '个人资料'})
 
 '''
-
-
-
-
-# ==============================================
-# 8. 模型参数配置（ModelConfig）管理视图
-# 支持用户创建、编辑、删除模型参数模板，
-# 并可设置全局默认配置，覆盖系统默认值。
-# ==============================================
-@login_required
-def model_config_list(request):
-    """列出当前用户的模型配置 + 全局默认配置"""
-    configs = ModelConfig.objects.filter(
-        user=request.user
-    ) | ModelConfig.objects.filter(is_global=True)
-    configs = configs.order_by("-is_global", "name")
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    return render(request, "chat/model_config_list.html", {
-        "configs": configs.distinct(),
-        "current_default": profile.default_model,
-        "page_title": "模型配置管理",
-    })
-
-
-@login_required
-def model_config_create(request):
-    """创建新的模型参数配置"""
-    if request.method == "POST":
-        form = ModelConfigForm(request.POST)
-        if form.is_valid():
-            config = form.save(commit=False)
-            config.user = request.user
-            config.save()
-            messages.success(request, f"模型配置「{config.name}」创建成功！")
-            return redirect("chat:model_config_list")
-    else:
-        form = ModelConfigForm()
-    return render(request, "chat/model_config_form.html", {
-        "form": form, "title": "创建模型配置"
-    })
-
-
-@login_required
-def model_config_update(request, pk):
-    """编辑已有的模型参数配置"""
-    config = get_object_or_404(ModelConfig, pk=pk, user=request.user)
-    if request.method == "POST":
-        form = ModelConfigForm(request.POST, instance=config)
-        if form.is_valid():
-            form.save()
-            messages.success(request, f"模型配置「{config.name}」更新成功！")
-            return redirect("chat:model_config_list")
-    else:
-        form = ModelConfigForm(instance=config)
-    return render(request, "chat/model_config_form.html", {
-        "form": form, "title": f"编辑模型配置 - {config.name}"
-    })
-
-
-@login_required
-def model_config_delete(request, pk):
-    """删除模型参数配置"""
-    config = get_object_or_404(ModelConfig, pk=pk, user=request.user)
-    name = config.name
-    config.delete()
-    messages.success(request, f"模型配置「{name}」已删除！")
-    return redirect("chat:model_config_list")
-
-
-@login_required
-def model_config_set_default(request, pk):
-    """
-    将指定 ModelConfig 设为用户默认模型。
-    实际上是将 ModelConfig 的 model_name 写入 UserProfile.default_model，
-    同时将 llm_provider 也更新为匹配的值。
-    """
-    if request.method != "POST":
-        return redirect("chat:model_config_list")
-    config = get_object_or_404(ModelConfig, pk=pk, user=request.user)
-    profile, _ = UserProfile.objects.get_or_create(user=request.user)
-    profile.default_model = config.model_name
-    model_lower = config.model_name.lower()
-    if "qwen" in model_lower:
-        profile.llm_provider = "qwen"
-    elif "deepseek" in model_lower:
-        profile.llm_provider = "deepseek"
-    elif "gpt" in model_lower:
-        profile.llm_provider = "openai"
-    profile.save()
-    messages.success(
-        request,
-        f"已将「{config.name}」设为默认模型（{config.model_name}，"
-        f"厂商：{profile.get_llm_provider_display()}）"
-    )
-    return redirect("chat:model_config_list")

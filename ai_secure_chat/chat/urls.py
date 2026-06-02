@@ -39,11 +39,4 @@ urlpatterns = [
 
     # ===================== 按关键词筛选对话 =====================
     path('entries/keyword/<slug:slug>/', views.entries_by_keyword, name='entries_by_keyword'),
-
-    # ===================== 模型参数配置管理 =====================
-    path('model-configs/', views.model_config_list, name='model_config_list'),
-    path('model-config/create/', views.model_config_create, name='model_config_create'),
-    path('model-config/<int:pk>/update/', views.model_config_update, name='model_config_update'),
-    path('model-config/<int:pk>/delete/', views.model_config_delete, name='model_config_delete'),
-    path('model-config/<int:pk>/set-default/', views.model_config_set_default, name='model_config_set_default'),
 ]
