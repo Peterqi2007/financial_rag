@@ -152,7 +152,9 @@ class BaseLLMProvider(ABC):
             logger.error(f"[LLM 客户端初始化失败] {msg} | 用户ID: {user.id}")
             raise LLMConfigError(msg)
 
-        return cls(user, api_key=profile.api_key)
+        # 读取用户默认模型（若未设置则使用 Provider 类自身的 DEFAULT_MODEL）
+        default_model = profile.default_model or cls.DEFAULT_MODEL
+        return cls(user, api_key=profile.api_key, model=default_model)
 
     @abstractmethod
     def _make_client(self):
@@ -339,12 +341,152 @@ class QwenProvider(BaseLLMProvider):
 
 
 # ==============================================
+# 具体实现：DeepSeek API（OpenAI 兼容模式）
+# ----------------------------------------------
+# DeepSeek V4 模型存在「思考内容」(reasoning_content)，
+# 即模型在输出最终回复前会先输出一段内部推理文本。
+# 当前策略：抛弃所有思考内容，仅保留最终回复 (content)。
+# ==============================================
+class DeepSeekProvider(BaseLLMProvider):
+    """
+    通过 DeepSeek 官方 API 调用 deepseek-v4-pro 等模型。
+    DeepSeek API 兼容 OpenAI 接口格式，因此底层复用 `openai` Python SDK。
+
+    与标准 OpenAI 的关键区别：
+        - 响应中可能包含 reasoning_content（思考链），本 Provider 会主动过滤
+        - 流式 delta 中可能出现仅含 reasoning_content 不含 content 的 chunk
+    """
+
+    name = "deepseek"
+    # DeepSeek API 基础地址（OpenAI 兼容端点）
+    DEFAULT_BASE_URL = "https://api.deepseek.com"
+    # 默认模型：deepseek-v4-pro（支持深度推理）
+    DEFAULT_MODEL = "deepseek-v4-pro"
+
+    # ---------- 客户端构造 ----------
+    def _make_client(self):
+        """构造 OpenAI 兼容客户端，指向 DeepSeek API。"""
+        # max_retries=0：与 QwenProvider 一致，关闭 SDK 层自动重试，
+        # 避免流式连接中断后被静默重连导致重复计费。
+        client = OpenAI(
+            api_key=self._api_key,
+            base_url=self._base_url,
+            max_retries=0,
+        )
+        logger.info(f"[DeepSeek 客户端初始化成功] 用户ID: {self.user.id}")
+        return client
+
+    # ---------- 公共参数打包 ----------
+    def _completion_kwargs(self, chat_entry, messages, *, stream):
+        """打包 DeepSeek API 调用参数。"""
+        return dict(
+            model=self._model,
+            messages=messages,
+            temperature=chat_entry.temperature,
+            top_p=chat_entry.top_p,
+            max_tokens=chat_entry.max_tokens,
+            stream=stream,
+        )
+
+    # ---------- 异常转译：DeepSeek 异常 → 统一 LLMError ----------
+    @staticmethod
+    def _translate_exception(e):
+        if isinstance(e, AuthenticationError):
+            return LLMAuthError(f"DeepSeek API Key 认证失败：{e}")
+        if isinstance(e, RateLimitError):
+            return LLMRateLimitError(f"DeepSeek 触发频率/额度限制：{e}")
+        if isinstance(e, APIConnectionError):
+            return LLMConnectionError(f"DeepSeek 网络连接失败：{e}")
+        if isinstance(e, NotFoundError):
+            return LLMModelNotFoundError(f"DeepSeek 模型/接口不存在：{e}")
+        if isinstance(e, APIError):
+            return LLMError(f"DeepSeek 服务异常：{e}")
+        return LLMError(f"DeepSeek 未知错误：{e}")
+
+    # ---------- 流式对话 ----------
+    def stream_chat(self, chat_entry, user_message):
+        chat_entry_id = chat_entry.id
+        user_id = chat_entry.user.id
+        logger.info(f"[DeepSeek 流式对话开始] chat_id={chat_entry_id} user_id={user_id}")
+
+        messages = self._build_messages(chat_entry, append_user=False)
+
+        full_text_parts = []
+        stream = None
+        try:
+            stream = self._client.chat.completions.create(
+                **self._completion_kwargs(chat_entry, messages, stream=True)
+            )
+        except Exception as e:
+            err = self._translate_exception(e)
+            logger.error(f"[DeepSeek 流式 建立连接失败] {err}")
+            yield ("error", str(err))
+            yield ("done", "")
+            return
+
+        try:
+            for chunk in stream:
+                try:
+                    choice = chunk.choices[0] if chunk.choices else None
+                    if not choice:
+                        continue
+                    delta = getattr(choice, "delta", None)
+                    if delta is None:
+                        continue
+                    # ===== 关键：过滤思考内容，仅取实际回复 =====
+                    # DeepSeek V4 会在 delta 中同时返回 reasoning_content（思考链）
+                    # 和 content（最终回复）。这里只取 content，丢弃 reasoning_content。
+                    piece = getattr(delta, "content", None)
+                    if piece:
+                        full_text_parts.append(piece)
+                        yield ("delta", piece)
+                    # 如果 chunk 仅包含 reasoning_content 而无 content，直接跳过
+                except Exception as inner:
+                    logger.warning(f"[DeepSeek 流式 chunk 解析异常] {inner}")
+                    continue
+        except Exception as e:
+            yield ("error", f"DeepSeek 读取流中断：{e}")
+        finally:
+            try:
+                if stream is not None:
+                    stream.close()
+            except Exception:
+                pass
+
+        yield ("done", "".join(full_text_parts))
+
+    # ---------- 非流式对话 ----------
+    def chat(self, chat_entry, user_message):
+        chat_entry_id = chat_entry.id
+        user_id = chat_entry.user.id
+        logger.info(f"[DeepSeek 非流式对话开始] chat_id={chat_entry_id} user_id={user_id}")
+
+        messages = self._build_messages(
+            chat_entry, append_user=True, user_message=user_message
+        )
+
+        try:
+            completion = self._client.chat.completions.create(
+                **self._completion_kwargs(chat_entry, messages, stream=False)
+            )
+            # 非流式响应：message 中可能同时包含 content 和 reasoning_content，
+            # 只返回 content 部分，抛弃思考内容。
+            return completion.choices[0].message.content
+        except Exception as e:
+            err = self._translate_exception(e)
+            logger.error(f"[DeepSeek 非流式 调用失败] {err}")
+            raise err
+
+
+# ==============================================
 # 厂商注册表 + 工厂
 # ----------------------------------------------
 # 新增厂商只需在此登记：_PROVIDER_REGISTRY["openai"] = OpenAIProvider
 # ==============================================
 _PROVIDER_REGISTRY: Dict[str, Type[BaseLLMProvider]] = {
     QwenProvider.name: QwenProvider,
+    DeepSeekProvider.name: DeepSeekProvider,
+    # 未来可继续注册其他厂商：
     # "openai": OpenAIProvider,
     # "anthropic": AnthropicProvider,
     # "gemini": GeminiProvider,
@@ -367,10 +509,10 @@ def get_llm_provider(user, provider_name: Optional[str] = None) -> BaseLLMProvid
     """
     name = provider_name
     if not name:
-        # 预留：未来 UserProfile 里加 llm_provider 字段后自动生效
+        # 优先读取 UserProfile.llm_provider 字段，用户可自主选择厂商
         try:
             profile = UserProfile.objects.get(user=user)
-            name = getattr(profile, "llm_provider", None) or DEFAULT_PROVIDER_NAME
+            name = profile.llm_provider or DEFAULT_PROVIDER_NAME
         except UserProfile.DoesNotExist:
             name = DEFAULT_PROVIDER_NAME
 
@@ -447,6 +589,7 @@ __all__ = [
     # 类
     "BaseLLMProvider",
     "QwenProvider",
+    "DeepSeekProvider",
     # 工厂
     "get_llm_provider",
     "DEFAULT_PROVIDER_NAME",

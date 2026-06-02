@@ -28,6 +28,18 @@ class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, unique=True, verbose_name="所属用户")
     # 隐私对话密码（哈希存储，绝不存明文！）
     privacy_password_hash = models.CharField(max_length=256, blank=True, default='', verbose_name="隐私密码")
+    # 默认使用的 LLM 厂商（qwen / deepseek / openai 等）
+    llm_provider = models.CharField(
+        max_length=30,
+        default="qwen",
+        blank=True,
+        choices=[
+            ("qwen", "通义千问"),
+            ("deepseek", "DeepSeek"),
+            ("openai", "OpenAI"),
+        ],
+        verbose_name="默认 LLM 厂商",
+    )
     # 默认使用的大模型名称
     default_model = models.CharField(max_length=50, default="qwen-plus", blank=True, verbose_name="默认大模型")
 
