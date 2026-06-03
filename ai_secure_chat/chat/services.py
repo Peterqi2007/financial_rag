@@ -562,9 +562,17 @@ class DeepSeekProvider(BaseLLMProvider):
         full_text_parts = []
         stream = None
         try:
-            stream = self._client.chat.completions.create(
-                **self._completion_kwargs(chat_entry, messages, stream=True)
+            create_seq = next(_LLM_CREATE_COUNTER)
+            kwargs = self._completion_kwargs(chat_entry, messages, stream=True)
+            sys.stdout.write(
+                f"===== [llm.create #{create_seq}] provider={self.name} "
+                f"model={kwargs['model']} "
+                f"chat_id={chat_entry_id} user_id={user_id} "
+                f"ts={time.strftime('%H:%M:%S')} "
+                f"msgs_len={len(messages)} max_retries=0\n"
             )
+            sys.stdout.flush()
+            stream = self._client.chat.completions.create(**kwargs)
         except Exception as e:
             err = self._translate_exception(e)
             logger.error(f"[DeepSeek 流式 建立连接失败] {err}")
@@ -614,9 +622,16 @@ class DeepSeekProvider(BaseLLMProvider):
         )
 
         try:
-            completion = self._client.chat.completions.create(
-                **self._completion_kwargs(chat_entry, messages, stream=False)
+            kwargs = self._completion_kwargs(chat_entry, messages, stream=False)
+            sys.stdout.write(
+                f"===== [llm.chat] provider={self.name} "
+                f"model={kwargs['model']} "
+                f"chat_id={chat_entry_id} user_id={user_id} "
+                f"ts={time.strftime('%H:%M:%S')} "
+                f"msgs_len={len(messages)}\n"
             )
+            sys.stdout.flush()
+            completion = self._client.chat.completions.create(**kwargs)
             # 非流式响应：message 中可能同时包含 content 和 reasoning_content，
             # 只返回 content 部分，抛弃思考内容。
             return completion.choices[0].message.content
