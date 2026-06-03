@@ -181,13 +181,20 @@ class RAGService:
         """
         将检索结果格式化为 LLM prompt 中的参考上下文。
         result: retrieve() 返回的统一格式 dict 或 None。
+
+        在检索结果前添加指令，要求 LLM 优先据此回答。
         """
         if not result or not result.get("answer"):
             return ""
-        parts = ["【知识库检索结果】"]
+        parts = [
+            "=== 以下是从知识库中检索到的参考资料 ===",
+            "请优先根据以下资料回答问题。如果资料内容与你的已有知识冲突，以资料为准。",
+            "",
+        ]
         if result.get("source"):
             parts.append(f"来源: {result['source']}")
         parts.append(result["answer"])
+        parts.append("=== 参考资料结束 ===")
         return "\n".join(parts)
 
 
@@ -273,6 +280,7 @@ class BaseLLMProvider(ABC):
                 min_score=profile.rag_min_score,
             )
             logger.info(f"[RAG] enabled for user_id={user.id}")
+            sys.stdout.write(f"\n[RAG] enabled for user_id={user.id}\n"); sys.stdout.flush()
 
         return cls(user, api_key=profile.api_key, model=default_model, rag_service=rag_service)
 
@@ -322,13 +330,16 @@ class BaseLLMProvider(ABC):
             query = user_query or user_message
             if query:
                 try:
+                    sys.stdout.write(f"\n[RAG] querying: {query[:80]}...\n"); sys.stdout.flush()
                     result = self._rag_service.retrieve(query)
                     if result and result.get("answer"):
                         rag_context = self._rag_service.format_context(result)
                         system_content = system_content + "\n\n" + rag_context
                         logger.info(f'[RAG] context injected, chat_id={chat_entry.id} source={result.get("source","")}')
+                        sys.stdout.write(f"\n[RAG] context injected, chat_id={chat_entry.id}\n"); sys.stdout.flush()
                 except Exception as e:
                     logger.warning(f"[RAG] skipped (error): {e}")
+                    sys.stdout.write(f"\n[RAG] error: {e}\n"); sys.stdout.flush()
 
         messages: List[Dict[str, str]] = [
             {"role": "system", "content": system_content}
