@@ -326,6 +326,9 @@ class BaseLLMProvider(ABC):
         # 构建 system prompt，可能包含 RAG 检索结果
         system_content = chat_entry.system_prompt
 
+        # 每次调用时重置，避免跨对话残留旧来源
+        self._rag_last_source = None
+
         # RAG 检索增强：Provider 持 RAGService 且对话级开关开启时触发
         if self._rag_service is not None and chat_entry.use_rag:
             query = user_query or user_message
