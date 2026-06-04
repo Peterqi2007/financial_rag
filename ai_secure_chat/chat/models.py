@@ -83,11 +83,11 @@ class UserProfile(models.Model):
     )
     # Coze 数据集名称
     rag_dataset_name = models.CharField(
-        max_length=100, default="knowledge_base", blank=True, verbose_name="知识库数据集名称"
+        max_length=100, default="fin_reports", blank=True, verbose_name="知识库数据集名称"
     )
     # 检索返回条数（1-20）
     rag_top_k = models.IntegerField(
-        default=4,
+        default=10,
         validators=[MinValueValidator(1), MaxValueValidator(20)],
         verbose_name="检索返回条数",
     )

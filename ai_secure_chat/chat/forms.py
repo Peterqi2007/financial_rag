@@ -216,9 +216,9 @@ class UserProfileForm(MezzanineProfileForm):
         )
         self.fields["rag_dataset_name"] = forms.CharField(
             label="数据集名称",
-            initial=self.profile.rag_dataset_name if self.profile else "knowledge_base",
+            initial=self.profile.rag_dataset_name if self.profile else "fin_reports",
             required=False,
-            widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "knowledge_base"}),
+            widget=forms.TextInput(attrs={"class": "form-control", "placeholder": "fin_reports"}),
         )
         self.fields["rag_base_url"] = forms.CharField(
             label="知识库 API 地址",
@@ -228,7 +228,7 @@ class UserProfileForm(MezzanineProfileForm):
         )
         self.fields["rag_top_k"] = forms.IntegerField(
             label="检索返回条数",
-            initial=self.profile.rag_top_k if self.profile else 4,
+            initial=self.profile.rag_top_k if self.profile else 10,
             required=False,
             min_value=1,
             max_value=20,
@@ -266,9 +266,9 @@ class UserProfileForm(MezzanineProfileForm):
         # 保存 RAG 知识库配置
         profile.rag_enabled = self.cleaned_data.get("rag_enabled", False)
         profile.rag_api_token = self.cleaned_data.get("rag_api_token", "")
-        profile.rag_dataset_name = self.cleaned_data.get("rag_dataset_name", "knowledge_base")
+        profile.rag_dataset_name = self.cleaned_data.get("rag_dataset_name", "fin_reports")
         profile.rag_base_url = self.cleaned_data.get("rag_base_url", "")
-        profile.rag_top_k = self.cleaned_data.get("rag_top_k", 4)
+        profile.rag_top_k = self.cleaned_data.get("rag_top_k", 10)
         profile.rag_min_score = self.cleaned_data.get("rag_min_score", 0.5)
 
         # 加密保存隐私对话密码

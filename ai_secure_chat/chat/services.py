@@ -95,7 +95,7 @@ _LLM_CREATE_COUNTER = itertools.count(1)
 class RAGService:
     """Coze 知识库检索增强服务。向云上 Coze API 发送用户问题，获取相关知识。"""
 
-    def __init__(self, base_url, api_token, dataset_name="knowledge_base", top_k=4, min_score=0.5):
+    def __init__(self, base_url, api_token, dataset_name="fin_reports", top_k=10, min_score=0.5):
         self.base_url = base_url.rstrip("/")
         self.api_token = api_token
         self.dataset_name = dataset_name
@@ -275,7 +275,7 @@ class BaseLLMProvider(ABC):
             rag_service = RAGService(
                 base_url=profile.rag_base_url,
                 api_token=profile.rag_api_token,
-                dataset_name=profile.rag_dataset_name or "knowledge_base",
+                dataset_name=profile.rag_dataset_name or "fin_reports",
                 top_k=profile.rag_top_k,
                 min_score=profile.rag_min_score,
             )
