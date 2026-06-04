@@ -112,6 +112,9 @@ def chat_stream(request, chat_id):
         # 流结束后保存 AI 回复
         try:
             if full_text.strip():
+                rag_source = getattr(provider, "_rag_last_source", None)
+                if rag_source:
+                    full_text = full_text.rstrip() + f"\n\n> 知识库来源：{rag_source}"
                 ChatMessage.objects.create(chat_entry=chat_entry, role="assistant", content=full_text)
         except Exception as e:
             sys.stdout.write(f"[chat_stream] 保存 AI 消息失败: {e}\n"); sys.stdout.flush()

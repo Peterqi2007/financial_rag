@@ -122,7 +122,7 @@ class RAGService:
             "Content-Type": "application/json",
         }
         try:
-            resp = requests.post(self.base_url, headers=headers, json=payload, timeout=15)
+            resp = requests.post(self.base_url, headers=headers, json=payload, timeout=60)
             if resp.status_code != 200:
                 logger.warning(f"[RAG] Coze API returned {resp.status_code}: {resp.text[:200]}")
                 return None
@@ -238,6 +238,7 @@ class BaseLLMProvider(ABC):
         self._base_url = base_url or self.DEFAULT_BASE_URL
         self._model = model or self.DEFAULT_MODEL
         self._rag_service = rag_service  # RAG 检索服务实例（可选）
+        self._rag_last_source = None  # 最近一次 RAG 检索的来源（供视图层落库）
         self._client = self._make_client()
 
     # ---------- 钩子 ----------
@@ -335,6 +336,7 @@ class BaseLLMProvider(ABC):
                     if result and result.get("answer"):
                         rag_context = self._rag_service.format_context(result)
                         system_content = system_content + "\n\n" + rag_context
+                        self._rag_last_source = result.get("source", "")  # 供视图层落库
                         logger.info(f'[RAG] context injected, chat_id={chat_entry.id} source={result.get("source","")}')
                         sys.stdout.write(f"\n[RAG] context injected, chat_id={chat_entry.id}\n"); sys.stdout.flush()
                 except Exception as e:
