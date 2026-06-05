@@ -44,6 +44,7 @@ from .models import UserProfile, ChatEntry, ChatMessage  # noqa: F401
 import logging
 import itertools
 import sys
+import re
 import time
 import requests
 import json
@@ -92,6 +93,19 @@ _LLM_CREATE_COUNTER = itertools.count(1)
 # ==============================================
 # RAG 外部知识库检索服务（Coze Coding）
 # ==============================================
+def _strip_coze_answer_source(text):
+    """
+    截断 Coze extracted_answer 末尾自带的 "知识库来源：" 段。
+    Coze 工作流可能在 answer 文本末尾自动附加来源列表，
+    若不截断，LLM 会将其原样输出，与视图层追加的来源重复。
+    """
+    if not text:
+        return ""
+    # 匹配 "知识库来源：" 及其后的所有内容（含中英文冒号变体、前导换行）
+    cleaned = re.split(r'\n*\s*知识库来源[：:]\s*', text, maxsplit=1)[0]
+    return cleaned.strip()
+
+
 class RAGService:
     """Coze 知识库检索增强服务。向云上 Coze API 发送用户问题，获取相关知识。"""
 
@@ -131,7 +145,10 @@ class RAGService:
             # 格式 1：Coze QA 工作流直接返回答案（extracted_answer + extracted_source）
             if isinstance(data, dict) and "extracted_answer" in data:
                 logger.info(f"[RAG] Coze QA matched: {data.get('message', '')}")
-                answer = data.get("extracted_answer", "")
+                # Coze 工作流可能在 extracted_answer 末尾附带 "知识库来源：" 段，
+                # 截断掉以避免 LLM 将其原样输出，造成与视图层追加的来源重复
+                raw_answer = data.get("extracted_answer", "")
+                answer = _strip_coze_answer_source(raw_answer)
                 source = data.get("extracted_source", "")
 
                 # 格式 3：reranked_results — Coze 重排序后的文档片段，
@@ -139,7 +156,6 @@ class RAGService:
                 reranked = data.get("reranked_results")
                 if isinstance(reranked, list) and reranked:
                     parts = [answer] if answer else []
-                    sources_extra = []
                     for i, doc in enumerate(reranked):
                         content = doc.get("content", "")
                         src_file = doc.get("source_file", "")
@@ -149,26 +165,19 @@ class RAGService:
                         # 为每条片段标注来源文件与章节，方便 LLM 引用
                         label = f"[参考片段 {i+1}]"
                         if src_file:
-                            label += f" 来源: {src_file}"
+                            label += f"（出自: {src_file}"
                             if heading:
                                 label += f" > {heading}"
+                            label += "）"
                         parts.append(f"{label}\n{content.strip()}")
-                        if src_file and src_file not in sources_extra:
-                            sources_extra.append(src_file)
 
                     answer = "\n\n".join(parts)
-                    # 将 reranked_results 中独有的来源文件并入 source
-                    if sources_extra:
-                        extra_src = "; ".join(sources_extra)
-                        source = f"{source}\n{extra_src}" if source else extra_src
 
                     logger.info(
-                        f"[RAG] reranked_results merged: {len(reranked)} docs, "
-                        f"{len(sources_extra)} unique source files"
+                        f"[RAG] reranked_results merged: {len(reranked)} docs"
                     )
                     sys.stdout.write(
-                        f"[RAG] reranked_results merged: {len(reranked)} docs, "
-                        f"{len(sources_extra)} unique source files\n"
+                        f"[RAG] reranked_results merged: {len(reranked)} docs\n"
                     ); sys.stdout.flush()
 
                 return {
@@ -229,11 +238,10 @@ class RAGService:
         parts = [
             "=== 以下是从知识库中检索到的参考资料 ===",
             "请优先根据以下资料回答问题。如果资料内容与你的已有知识冲突，以资料为准。",
-            "提及该资料时请说明该资料为“实时公开资料”",
+            '提及该资料时请说明该资料为"实时公开资料"',
+            "（不要在回复中列出知识库来源，来源将由系统自动附加）",
             "",
         ]
-        if result.get("source"):
-            parts.append(f"来源: {result['source']}")
         parts.append(result["answer"])
         parts.append("=== 参考资料结束 ===")
         return "\n".join(parts)
