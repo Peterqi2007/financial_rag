@@ -131,10 +131,50 @@ class RAGService:
             # 格式 1：Coze QA 工作流直接返回答案（extracted_answer + extracted_source）
             if isinstance(data, dict) and "extracted_answer" in data:
                 logger.info(f"[RAG] Coze QA matched: {data.get('message', '')}")
+                answer = data.get("extracted_answer", "")
+                source = data.get("extracted_source", "")
+
+                # 格式 3：reranked_results — Coze 重排序后的文档片段，
+                # 作为补充参考资料与 extracted_answer 一并注入 LLM 上下文
+                reranked = data.get("reranked_results")
+                if isinstance(reranked, list) and reranked:
+                    parts = [answer] if answer else []
+                    sources_extra = []
+                    for i, doc in enumerate(reranked):
+                        content = doc.get("content", "")
+                        src_file = doc.get("source_file", "")
+                        heading = doc.get("heading_title", "")
+                        if not content:
+                            continue
+                        # 为每条片段标注来源文件与章节，方便 LLM 引用
+                        label = f"[参考片段 {i+1}]"
+                        if src_file:
+                            label += f" 来源: {src_file}"
+                            if heading:
+                                label += f" > {heading}"
+                        parts.append(f"{label}\n{content.strip()}")
+                        if src_file and src_file not in sources_extra:
+                            sources_extra.append(src_file)
+
+                    answer = "\n\n".join(parts)
+                    # 将 reranked_results 中独有的来源文件并入 source
+                    if sources_extra:
+                        extra_src = "; ".join(sources_extra)
+                        source = f"{source}\n{extra_src}" if source else extra_src
+
+                    logger.info(
+                        f"[RAG] reranked_results merged: {len(reranked)} docs, "
+                        f"{len(sources_extra)} unique source files"
+                    )
+                    sys.stdout.write(
+                        f"[RAG] reranked_results merged: {len(reranked)} docs, "
+                        f"{len(sources_extra)} unique source files\n"
+                    ); sys.stdout.flush()
+
                 return {
                     "success": data.get("success", True),
-                    "answer": data.get("extracted_answer", ""),
-                    "source": data.get("extracted_source", ""),
+                    "answer": answer,
+                    "source": source,
                     "raw": data,
                 }
 
@@ -189,6 +229,7 @@ class RAGService:
         parts = [
             "=== 以下是从知识库中检索到的参考资料 ===",
             "请优先根据以下资料回答问题。如果资料内容与你的已有知识冲突，以资料为准。",
+            "提及该资料时请说明该资料为“实时公开资料”",
             "",
         ]
         if result.get("source"):
