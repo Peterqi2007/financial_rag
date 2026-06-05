@@ -14,7 +14,7 @@ from .forms import (
 from django.http import StreamingHttpResponse
 # ✅ 新的类化 LLM 服务层：工厂 + 统一异常
 # 视图不再直接绑定"千问"具体实现，换厂商时此处完全无需修改。
-from .services import get_llm_provider, LLMError
+from .services import get_llm_provider, LLMError, _strip_coze_answer_source
 import json
 import time
 import sys
@@ -112,7 +112,10 @@ def chat_stream(request, chat_id):
         # 流结束后保存 AI 回复
         # 若 RAG 检索到了来源，先通过 SSE 推给前端再落库
         try:
+            # 截断 LLM 可能自行生成的 "知识库来源：..." 文本，
+            # 仅保留正文部分，再追加统一格式的来源标注
             if full_text.strip():
+                full_text = _strip_coze_answer_source(full_text)
                 rag_source = getattr(provider, "_rag_last_source", None)
                 if rag_source:
                     source_text = f"\n\n> 知识库来源：{rag_source}"
@@ -161,7 +164,8 @@ def chat_send(request, chat_id):
         provider = get_llm_provider(request.user)
         ai_reply = provider.chat(chat_entry, user_message)
 
-        # 5. 追加 RAG 来源（与流式视图逻辑一致）
+        # 5. 截断 LLM 可能自行生成的来源文本，再追加统一来源
+        ai_reply = _strip_coze_answer_source(ai_reply)
         rag_source = getattr(provider, "_rag_last_source", None)
         if rag_source:
             ai_reply = ai_reply.rstrip() + f"\n\n> 知识库来源：{rag_source}"

@@ -158,17 +158,11 @@ class RAGService:
                     parts = [answer] if answer else []
                     for i, doc in enumerate(reranked):
                         content = doc.get("content", "")
-                        src_file = doc.get("source_file", "")
-                        heading = doc.get("heading_title", "")
                         if not content:
                             continue
-                        # 为每条片段标注来源文件与章节，方便 LLM 引用
+                        # 仅编号，不标注来源文件/章节——
+                        # 避免 LLM 根据文件名和章节标题自行拼出"知识库来源"段落
                         label = f"[参考片段 {i+1}]"
-                        if src_file:
-                            label += f"（出自: {src_file}"
-                            if heading:
-                                label += f" > {heading}"
-                            label += "）"
                         parts.append(f"{label}\n{content.strip()}")
 
                     answer = "\n\n".join(parts)
@@ -238,8 +232,8 @@ class RAGService:
         parts = [
             "=== 以下是从知识库中检索到的参考资料 ===",
             "请优先根据以下资料回答问题。如果资料内容与你的已有知识冲突，以资料为准。",
-            '提及该资料时请说明该资料为"实时公开资料"',
-            "（不要在回复中列出知识库来源，来源将由系统自动附加）",
+            "【重要】不要在回复中提及任何文件名、章节标题或知识库来源，来源标注由系统自动附加。",
+            "你可以引用资料中的事实和数据，但不要说明它们出自哪个文件。",
             "",
         ]
         parts.append(result["answer"])
