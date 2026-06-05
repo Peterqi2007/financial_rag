@@ -110,11 +110,14 @@ def chat_stream(request, chat_id):
             yield "data: " + json.dumps({"error": f"服务器异常：{e}"}, ensure_ascii=False) + "\n\n"
 
         # 流结束后保存 AI 回复
+        # 若 RAG 检索到了来源，先通过 SSE 推给前端再落库
         try:
             if full_text.strip():
                 rag_source = getattr(provider, "_rag_last_source", None)
                 if rag_source:
-                    full_text = full_text.rstrip() + f"\n\n> 知识库来源：{rag_source}"
+                    source_text = f"\n\n> 知识库来源：{rag_source}"
+                    full_text = full_text.rstrip() + source_text
+                    yield "data: " + json.dumps({"content": source_text}, ensure_ascii=False) + "\n\n"
                 ChatMessage.objects.create(chat_entry=chat_entry, role="assistant", content=full_text)
         except Exception as e:
             sys.stdout.write(f"[chat_stream] 保存 AI 消息失败: {e}\n"); sys.stdout.flush()
@@ -158,14 +161,19 @@ def chat_send(request, chat_id):
         provider = get_llm_provider(request.user)
         ai_reply = provider.chat(chat_entry, user_message)
 
-        # 5. 保存AI回复
+        # 5. 追加 RAG 来源（与流式视图逻辑一致）
+        rag_source = getattr(provider, "_rag_last_source", None)
+        if rag_source:
+            ai_reply = ai_reply.rstrip() + f"\n\n> 知识库来源：{rag_source}"
+
+        # 6. 保存AI回复
         ChatMessage.objects.create(
             chat_entry=chat_entry,
             role="assistant",
             content=ai_reply
         )
 
-        # 6. 一次性返回完整数据给前端
+        # 7. 一次性返回完整数据给前端
         return JsonResponse({
             "status": "success",
             "ai_content": ai_reply
@@ -455,7 +463,32 @@ def chat_entry_create(request):
         if form.is_valid():
             chat_entry = form.save(commit=False)
             chat_entry.user = request.user
-            chat_entry.system_prompt = "你是一个智能助手"
+            if chat_entry.use_rag:
+                chat_entry.system_prompt='''
+                你是资深金融投研分析师，仅基于已绑定的「金融投研知识库」中的上市公司财报、研报、招股书内容，输出严谨、合规、可用于课程作业的金融分析与参考建议。
+
+                严格遵守以下全部规则：
+                1.
+                信息来源唯一：所有分析、数据、结论必须100 % 来自文档原文和历史数据，禁止编造、引用外部信息、预测股价。
+                2.
+                分析范围：覆盖财务表现、业务结构、成长性、盈利能力、偿债能力、经营风险、行业地位、募资用途（招股书）。
+                3.
+                合规底线：绝对不出现“买入、卖出、持有、加仓、减仓、推荐、翻倍、稳赚”等投资指令，只做客观分析与参考建议。
+                4.
+                无信息处理：文档无相关内容时，仅回复：“根据现有文档，无法提供相关分析建议。”
+                5.
+                若用户问及某公司的整体经营状况或投资建议等，必须以以下固定格式输出（必须严格执行）：
+                【核心财务概况】
+                【经营与成长性分析】
+                【盈利能力与偿债能力】
+                【核心风险提示】
+                【金融参考建议（非投资建议）】
+                6.
+                结尾必须加风险提示：
+                【重要声明】本内容仅基于公开文档分析，不构成任何投资建议。投资有风险，决策需谨慎。
+                '''
+            else:
+                chat_entry.system_prompt = "你是一个智能助手"
             chat_entry.save()
             # chat_entry.keywords.refresh_from_db()
             messages.success(request, '对话创建成功！')
