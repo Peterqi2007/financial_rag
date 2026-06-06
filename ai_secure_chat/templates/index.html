@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load mezzanine_tags %}
 
-{% block title %}AI Chat CMS · 首页{% endblock %}
+{% block title %}金融投研 AI 助手 · 首页{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -156,15 +156,15 @@
 {% block main %}
 <div class="home-hero">
     <div class="home-hero-inner">
-        <span class="home-eyebrow">AI Chat CMS</span>
+        <span class="home-eyebrow">RAG 金融投研 AI 助手</span>
         <h1 class="home-title">
-            让大模型对话，<br>
-            变得 <span class="accent">有序、安全、智能</span>
+            基于 <span class="accent">RAG 检索增强</span>，<br>
+            让每一次投研分析都有据可依
         </h1>
         <p class="home-subtitle">
-            Structured, Secure, Smart — 一个围绕 LLM 的对话管理系统。
-            分类归档、隐私加密、多轮上下文、流式 Markdown 渲染，
-            把你的 AI 对话沉淀成可检索的个人知识资产。
+            精准检索企业财报、权威研报与金融政策等专业资料库，再基于可靠数据驱动大模型生成严谨、
+            有依据的投研分析与咨询解答。支持千问 & DeepSeek 双模型接入、流式实时对话、
+            对话恒久存储与分类管理，可部署至云端。
         </p>
 
         <div class="home-ctas">
@@ -190,24 +190,24 @@
 
         <div class="feature-grid">
             <div class="feature-card">
-                <div class="feature-icon"><i class="fa-solid fa-folder-tree"></i></div>
-                <div class="feature-title">分类归档</div>
-                <div class="feature-desc">分类 / 文件夹 / 对话三层结构，上下文不再散落。</div>
+                <div class="feature-icon"><i class="fa-solid fa-database"></i></div>
+                <div class="feature-title">RAG 知识库检索</div>
+                <div class="feature-desc">基于企业财报、权威研报、招股书构建云端知识库，先检索再生成，杜绝凭空编造。</div>
             </div>
             <div class="feature-card">
-                <div class="feature-icon"><i class="fa-solid fa-shield-halved"></i></div>
-                <div class="feature-title">对话控制访问</div>
-                <div class="feature-desc">隐私对话强制密码输入。API Key，登录密码，隐私密码分离加密存储。</div>
+                <div class="feature-icon"><i class="fa-solid fa-brain"></i></div>
+                <div class="feature-title">双模型接入</div>
+                <div class="feature-desc">同时支持千问（Qwen）与 DeepSeek 大模型 API，可按需切换厂商与模型版本。</div>
             </div>
             <div class="feature-card">
-                <div class="feature-icon"><i class="fa-solid fa-bolt"></i></div>
-                <div class="feature-title">流式 Markdown</div>
-                <div class="feature-desc">SSE 流式渲染，边说边到；表格、代码块、列表原样展示。</div>
+                <div class="feature-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+                <div class="feature-title">云端可部署</div>
+                <div class="feature-desc">Django + 云端知识库架构，支持部署至云服务器，随时随地访问投研助手。</div>
             </div>
             <div class="feature-card">
-                <div class="feature-icon"><i class="fa-solid fa-gears"></i></div>
-                <div class="feature-title">可配置模型参数</div>
-                <div class="feature-desc">temperature / top_p / system prompt 每个对话各自保存。</div>
+                <div class="feature-icon"><i class="fa-solid fa-layer-group"></i></div>
+                <div class="feature-title">对话分类管理</div>
+                <div class="feature-desc">分类 / 文件夹多重嵌套，对话恒久存储；隐私对话加密保护，模型参数独立配置。</div>
             </div>
         </div>
     </div>
