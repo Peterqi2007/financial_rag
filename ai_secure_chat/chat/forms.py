@@ -70,6 +70,15 @@ class FolderForm(forms.ModelForm):
 # 用于对话条目的新增/编辑，包含模型参数配置
 # ==============================================
 class ChatEntryForm(forms.ModelForm):
+    # 显式声明为 CharField：Mezzanine KeywordsField 的 GenericRelation
+    # 在 ModelForm 中默认生成 ModelMultipleChoiceField（期望 PK 列表），
+    # 与 TextInput widget 不兼容——用户输入的纯文本会被当成 PK 校验而失败。
+    # 改用 CharField 后由 clean_keywords 负责文本→ID 转换。
+    keywords = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': '多个关键字用英文逗号分隔（如：AI,对话,安全）'}),
+    )
+
     class Meta:
         model = ChatEntry
         fields = ['title', 'description', 'temperature', 'top_p', 'max_tokens', 'is_private', 'use_rag', 'folder', 'keywords']
@@ -93,8 +102,6 @@ class ChatEntryForm(forms.ModelForm):
             'is_private': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'use_rag': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'folder': forms.Select(attrs={'class': 'form-select'}),
-            # ✅ 关键字输入框：逗号分隔多个关键字，适配Bootstrap样式
-            'keywords': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '多个关键字用英文逗号分隔（如：AI,对话,安全）'}),
         }
 
 
@@ -106,6 +113,23 @@ class ChatEntryForm(forms.ModelForm):
         if self.user:
             self.fields['folder'].queryset = Folder.objects.filter(user=self.user)
             self.fields['folder'].empty_label = "请选择所属文件夹"
+
+    def clean_keywords(self):
+        """
+        Mezzanine KeywordsField.save_form_data 期望逗号分隔的 Keyword ID，
+        但前端 TextInput 传的是关键词文本。这里将文本转为 ID，
+        对不存在的关键词自动创建。
+        """
+        from mezzanine.generic.models import Keyword
+        value = self.cleaned_data.get('keywords', '')
+        if not value or not value.strip():
+            return ''
+        keywords_text = [k.strip() for k in value.split(',') if k.strip()]
+        ids = []
+        for kw in keywords_text:
+            kw_obj, _ = Keyword.objects.get_or_create(title=kw)
+            ids.append(str(kw_obj.id))
+        return ','.join(ids)
 
 
 # ==============================================

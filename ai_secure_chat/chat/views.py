@@ -364,7 +364,7 @@ def chat_entry_list(request, folder_id=None):
         ).order_by('-updated_at')
 
     return render(request, 'chat/chat_entry_list.html', {
-        'chat_entries': chat_entries,
+        'entries': chat_entries,
         'folder': folder
     })
 
@@ -490,7 +490,7 @@ def chat_entry_create(request):
             else:
                 chat_entry.system_prompt = "你是一个智能助手"
             chat_entry.save()
-            # chat_entry.keywords.refresh_from_db()
+            form.save_m2m()  # 保存 M2M 关系（含 Mezzanine 关键字）
             messages.success(request, '对话创建成功！')
             return redirect('chat:chat_entry_info', chat_id=chat_entry.id)
     else:
