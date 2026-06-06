@@ -463,6 +463,10 @@ class QwenProvider(BaseLLMProvider):
         # 那会污染上下文，并让 DashScope 日志看起来"被调了 2 次"。
         messages = self._build_messages(chat_entry, append_user=False, user_query=user_message)
 
+        # RAG 检索完成 → 通知前端切换气泡
+        if self._rag_service is not None and chat_entry.use_rag:
+            yield "status", "rag_done"
+
         full_text_parts: List[str] = []
         stream = None
         try:
@@ -606,6 +610,10 @@ class DeepSeekProvider(BaseLLMProvider):
         logger.info(f"[DeepSeek 流式对话开始] chat_id={chat_entry_id} user_id={user_id}")
 
         messages = self._build_messages(chat_entry, append_user=False, user_query=user_message)
+
+        # RAG 检索完成 → 通知前端切换气泡
+        if self._rag_service is not None and chat_entry.use_rag:
+            yield "status", "rag_done"
 
         full_text_parts = []
         stream = None

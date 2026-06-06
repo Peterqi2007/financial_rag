@@ -123,7 +123,7 @@ def chat_stream(request, chat_id):
             yield "event: done\ndata: " + json.dumps({"ok": False}) + "\n\n"
             return
 
-        # 1.5) 若启用 RAG，通知前端切换气泡为"正在调用RAG数据库"
+        # 1.5) 若启用 RAG，通知前端切换气泡为"正在调用RAG知识库..."
         if provider is not None and provider._rag_service is not None and chat_entry.use_rag:
             yield "data: " + json.dumps({"status": "rag_querying"}, ensure_ascii=False) + "\n\n"
 
@@ -131,7 +131,9 @@ def chat_stream(request, chat_id):
         try:
             # 2) 面向接口调用：任何厂商的 Provider 都按 (event_type, payload) 事件流对外
             for event_type, payload in provider.stream_chat(chat_entry, user_message):
-                if event_type == "delta":
+                if event_type == "status":
+                    yield "data: " + json.dumps({"status": payload}, ensure_ascii=False) + "\n\n"
+                elif event_type == "delta":
                     full_text += payload
                     yield "data: " + json.dumps({"content": payload}, ensure_ascii=False) + "\n\n"
                 elif event_type == "error":

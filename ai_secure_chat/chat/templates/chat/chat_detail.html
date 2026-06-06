@@ -388,7 +388,11 @@
                     catch (e) { console.warn('SSE JSON 解析失败:', dataStr); continue; }
 
                     if (payload.status === 'rag_querying') {
-                        loadingBubble.textContent = '正在调用RAG数据库';
+                        loadingBubble.textContent = '正在调用RAG知识库...';
+                        continue;
+                    }
+                    if (payload.status === 'rag_done') {
+                        loadingBubble.textContent = 'AI正在思考中...';
                         continue;
                     }
                     if (eventName === 'done') {
