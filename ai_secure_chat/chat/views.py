@@ -49,12 +49,16 @@ def _set_chat_entry_keywords(chat_entry, keywords_text):
         kw = kw.strip()
         if not kw:
             continue
-        kw_obj, _ = Keyword.objects.get_or_create(title=kw)
-        AssignedKeyword.objects.create(
-            content_type=ct,
-            object_pk=chat_entry.pk,
-            keyword=kw_obj,
-        )
+        try:
+            kw_obj, _ = Keyword.objects.get_or_create(title=kw)
+            AssignedKeyword.objects.create(
+                content_type=ct,
+                object_pk=chat_entry.pk,
+                keyword=kw_obj,
+            )
+        except Exception as e:
+            sys.stdout.write(f"[keywords] 保存关键字 '{kw}' 失败: {e}\n")
+            sys.stdout.flush()
 
 
 # ==============================================
@@ -556,7 +560,12 @@ def chat_entry_delete(request, pk):
     chat_entry = get_object_or_404(ChatEntry, pk=pk, user=request.user)
     chat_entry.delete()
     messages.success(request, '对话删除成功！')
-    return redirect('chat:chat_entry_list')
+    # 从哪来删的回哪去：有文件夹回文件夹，否则回分类列表
+    if chat_entry.folder and chat_entry.folder.category:
+        return redirect('chat:folder_detail',
+            category_id=chat_entry.folder.category_id,
+            folder_id=chat_entry.folder_id)
+    return redirect('chat:category_list')
 
 # ==============================================
 # 7. 隐私对话验证、对话详情、用户资料、流式对话（无修改，保留原有）

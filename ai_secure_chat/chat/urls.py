@@ -38,5 +38,5 @@ urlpatterns = [
     path('chat/<int:chat_id>/detail/', views.chat_detail, name='chat_detail'),  # 对话详情页（需从info页跳转）
 
     # ===================== 按关键词筛选对话 =====================
-    path('entries/keyword/<slug:slug>/', views.entries_by_keyword, name='entries_by_keyword'),
+    path('entries/keyword/<str:slug>/', views.entries_by_keyword, name='entries_by_keyword'),
 ]
