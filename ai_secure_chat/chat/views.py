@@ -505,7 +505,12 @@ def chat_entry_update(request, pk):
         if form.is_valid():
             form.save()
             messages.success(request, '对话更新成功！')
-            return redirect('chat:chat_entry_list')
+            # 返回来源页面：优先跳回文件夹，否则跳回对话详情页
+            if chat_entry.folder and chat_entry.folder.category:
+                return redirect('chat:folder_detail',
+                    category_id=chat_entry.folder.category_id,
+                    folder_id=chat_entry.folder_id)
+            return redirect('chat:chat_entry_info', chat_id=chat_entry.id)
     else:
         form = ChatEntryForm(user=request.user, instance=chat_entry)
     return render(request, 'chat/chat_entry_form.html', {'form': form, 'title': '编辑对话'})
