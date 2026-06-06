@@ -503,14 +503,20 @@ def chat_entry_update(request, pk):
     if request.method == 'POST':
         form = ChatEntryForm(request.POST, user=request.user, instance=chat_entry)
         if form.is_valid():
-            form.save()
-            messages.success(request, '对话更新成功！')
-            # 跳回文件夹详情页，避免隐私对话触发密码验证
-            if chat_entry.folder and chat_entry.folder.category:
+            chat_entry_new = form.save(commit=False)
+
+            # 如果是隐私对话就跳转到文件夹，如果不是跳转到对话详情页
+            if chat_entry_new.is_private:
+                chat_entry_new.save()
+                messages.success(request, '对话更新成功！')
                 return redirect('chat:folder_detail',
-                    category_id=chat_entry.folder.category_id,
-                    folder_id=chat_entry.folder_id)
-            return redirect('chat:chat_entry_list')
+                    category_id=chat_entry_new.folder.category_id,
+                    folder_id=chat_entry_new.folder_id)
+            else:
+                chat_entry_new.save()
+                messages.success(request, '对话更新成功！')
+                return redirect('chat:chat_entry_info', chat_id=chat_entry.id)
+
     else:
         form = ChatEntryForm(user=request.user, instance=chat_entry)
     return render(request, 'chat/chat_entry_form.html', {'form': form, 'title': '编辑对话'})
