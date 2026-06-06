@@ -335,6 +335,11 @@
         addMessage(msg, true);
         userMessage.value = '';
         userMessage.rows = 1;
+        // 将思考气泡移到最新用户消息下方，始终可见不随滚动消失
+        const lastUserBubble = chatContainer.querySelector('.user-bubble:last-of-type');
+        if (lastUserBubble) {
+            lastUserBubble.after(loadingBubble);
+        }
         loadingBubble.style.display = 'block';
 
         const formData = new FormData();
