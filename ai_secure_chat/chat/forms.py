@@ -81,7 +81,7 @@ class ChatEntryForm(forms.ModelForm):
 
     class Meta:
         model = ChatEntry
-        fields = ['title', 'description', 'temperature', 'top_p', 'max_tokens', 'is_private', 'use_rag', 'folder', 'keywords']
+        fields = ['title', 'description', 'temperature', 'top_p', 'max_tokens', 'is_private', 'use_rag', 'folder']
         labels = {
             'title': ChatEntry._meta.get_field('title').verbose_name,
             'description': ChatEntry._meta.get_field('description').verbose_name,
@@ -91,7 +91,6 @@ class ChatEntryForm(forms.ModelForm):
             'is_private': ChatEntry._meta.get_field('is_private').verbose_name,
             'use_rag': ChatEntry._meta.get_field('use_rag').verbose_name,
             'folder': ChatEntry._meta.get_field('folder').verbose_name,
-            'keywords': ChatEntry._meta.get_field('keywords').verbose_name,
         }
         widgets = {
             'title': forms.TextInput(attrs={'class': 'form-control', 'placeholder': '请输入对话标题'}),
@@ -108,28 +107,26 @@ class ChatEntryForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         # 初始化时过滤当前用户的文件夹
         self.user = kwargs.pop('user', None)
+
+        # 必须在 super().__init__() 之前设置 initial，
+        # 否则 CharField 会从模型实例拿到 GenericRelation 查询集，
+        # 被 str() 成 "<QuerySet []>" 显示在输入框中。
+        instance = kwargs.get('instance')
+        if instance and instance.pk:
+            assigned = instance.keywords.all()
+            initial = kwargs.setdefault('initial', {})
+            if assigned.exists():
+                initial['keywords'] = ', '.join(
+                    a.keyword.title for a in assigned
+                )
+            else:
+                initial['keywords'] = ''  # 无关键字时显式置空，避免落入查询集
+
         super().__init__(*args, **kwargs)
 
         if self.user:
             self.fields['folder'].queryset = Folder.objects.filter(user=self.user)
             self.fields['folder'].empty_label = "请选择所属文件夹"
-
-    def clean_keywords(self):
-        """
-        Mezzanine KeywordsField.save_form_data 期望逗号分隔的 Keyword ID，
-        但前端 TextInput 传的是关键词文本。这里将文本转为 ID，
-        对不存在的关键词自动创建。
-        """
-        from mezzanine.generic.models import Keyword
-        value = self.cleaned_data.get('keywords', '')
-        if not value or not value.strip():
-            return ''
-        keywords_text = [k.strip() for k in value.split(',') if k.strip()]
-        ids = []
-        for kw in keywords_text:
-            kw_obj, _ = Keyword.objects.get_or_create(title=kw)
-            ids.append(str(kw_obj.id))
-        return ','.join(ids)
 
 
 # ==============================================

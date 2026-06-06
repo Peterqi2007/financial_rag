@@ -15,6 +15,8 @@ from django.http import StreamingHttpResponse
 # ✅ 新的类化 LLM 服务层：工厂 + 统一异常
 # 视图不再直接绑定"千问"具体实现，换厂商时此处完全无需修改。
 from .services import get_llm_provider, LLMError
+from mezzanine.generic.models import Keyword, AssignedKeyword
+from django.contrib.contenttypes.models import ContentType
 import json
 import time
 import sys
@@ -27,6 +29,32 @@ from urllib.parse import urlparse
 # 如果 Django 只进来 1 次，序号只+1。runserver 是单进程 + StatReloader
 # 多线程的，全局 counter 足以区分"一次点击到底走进几次视图"。
 _CHAT_STREAM_ENTER_COUNTER = itertools.count(1)
+
+
+def _set_chat_entry_keywords(chat_entry, keywords_text):
+    """
+    手动管理 ChatEntry 的关键字——绕过 Mezzanine KeywordsField.save_form_data，
+    直接操作 AssignedKeyword 模型。对新旧实例均有效。
+    keywords_text: 逗号分隔的关键字标题文本（如 "AI, 对话, 安全"），可为空。
+    """
+    ct = ContentType.objects.get_for_model(ChatEntry)
+    # 删除该实例所有已有的 AssignedKeyword
+    AssignedKeyword.objects.filter(
+        content_type=ct, object_pk=chat_entry.pk
+    ).delete()
+    if not keywords_text or not keywords_text.strip():
+        return
+    # 解析文本，为每个关键字获取或创建 Keyword，再创建 AssignedKeyword
+    for kw in keywords_text.split(','):
+        kw = kw.strip()
+        if not kw:
+            continue
+        kw_obj, _ = Keyword.objects.get_or_create(title=kw)
+        AssignedKeyword.objects.create(
+            content_type=ct,
+            object_pk=chat_entry.pk,
+            keyword=kw_obj,
+        )
 
 
 # ==============================================
@@ -490,7 +518,9 @@ def chat_entry_create(request):
             else:
                 chat_entry.system_prompt = "你是一个智能助手"
             chat_entry.save()
-            form.save_m2m()  # 保存 M2M 关系（含 Mezzanine 关键字）
+            # 手动管理关键字——绕过 Mezzanine save_form_data，新旧实例通用
+            _set_chat_entry_keywords(chat_entry,
+                form.cleaned_data.get('keywords', ''))
             messages.success(request, '对话创建成功！')
             return redirect('chat:chat_entry_info', chat_id=chat_entry.id)
     else:
@@ -504,18 +534,18 @@ def chat_entry_update(request, pk):
         form = ChatEntryForm(request.POST, user=request.user, instance=chat_entry)
         if form.is_valid():
             chat_entry_new = form.save(commit=False)
+            chat_entry_new.save()
+            # 手动管理关键字——绕过 Mezzanine save_form_data，新旧实例通用
+            _set_chat_entry_keywords(chat_entry_new,
+                form.cleaned_data.get('keywords', ''))
+            messages.success(request, '对话更新成功！')
 
-            # 如果是隐私对话就跳转到文件夹，如果不是跳转到对话详情页
-            if chat_entry_new.is_private:
-                chat_entry_new.save()
-                messages.success(request, '对话更新成功！')
+            # 隐私对话跳回文件夹，普通对话跳回详情页
+            if chat_entry_new.is_private and chat_entry_new.folder and chat_entry_new.folder.category:
                 return redirect('chat:folder_detail',
                     category_id=chat_entry_new.folder.category_id,
                     folder_id=chat_entry_new.folder_id)
-            else:
-                chat_entry_new.save()
-                messages.success(request, '对话更新成功！')
-                return redirect('chat:chat_entry_info', chat_id=chat_entry.id)
+            return redirect('chat:chat_entry_info', chat_id=chat_entry.id)
 
     else:
         form = ChatEntryForm(user=request.user, instance=chat_entry)
