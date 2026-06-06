@@ -387,6 +387,10 @@
                     try { payload = JSON.parse(dataStr); }
                     catch (e) { console.warn('SSE JSON 解析失败:', dataStr); continue; }
 
+                    if (payload.status === 'rag_querying') {
+                        loadingBubble.textContent = '正在调用RAG数据库';
+                        continue;
+                    }
                     if (eventName === 'done') {
                         console.log('[SSE] 流结束', payload);
                         continue;
