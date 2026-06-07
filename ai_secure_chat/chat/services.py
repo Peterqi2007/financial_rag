@@ -44,7 +44,6 @@ from .models import UserProfile, ChatEntry, ChatMessage  # noqa: F401
 import logging
 import itertools
 import sys
-import re
 import time
 import requests
 import json
@@ -93,19 +92,6 @@ _LLM_CREATE_COUNTER = itertools.count(1)
 # ==============================================
 # RAG 外部知识库检索服务（Coze Coding）
 # ==============================================
-def _strip_coze_answer_source(text):
-    """
-    截断 Coze extracted_answer 末尾自带的 "知识库来源：" 段。
-    Coze 工作流可能在 answer 文本末尾自动附加来源列表，
-    若不截断，LLM 会将其原样输出，与视图层追加的来源重复。
-    """
-    if not text:
-        return ""
-    # 匹配 "知识库来源：" 及其后的所有内容（含中英文冒号变体、前导换行）
-    cleaned = re.split(r'\n*\s*知识库来源[：:]\s*', text, maxsplit=1)[0]
-    return cleaned.strip()
-
-
 class RAGService:
     """Coze 知识库检索增强服务。向云上 Coze API 发送用户问题，获取相关知识。"""
 
@@ -142,42 +128,50 @@ class RAGService:
                 return None
             data = resp.json()
 
-            # 格式 1：Coze QA 工作流直接返回答案（extracted_answer + extracted_source）
-            if isinstance(data, dict) and "extracted_answer" in data:
-                logger.info(f"[RAG] Coze QA matched: {data.get('message', '')}")
-                # Coze 工作流可能在 extracted_answer 末尾附带 "知识库来源：" 段，
-                # 截断掉以避免 LLM 将其原样输出，造成与视图层追加的来源重复
-                raw_answer = data.get("extracted_answer", "")
-                answer = _strip_coze_answer_source(raw_answer)
-                source = data.get("extracted_source", "")
+            # 格式 1：reranked_results — Coze 重排序后的文档切片（当前主格式）
+            reranked = data.get("reranked_results") if isinstance(data, dict) else None
+            if isinstance(reranked, list) and reranked:
+                answer_parts = []
+                source_parts = []
+                seen_sources = set()
+                for i, doc in enumerate(reranked):
+                    content = doc.get("content", "")
+                    if not content:
+                        continue
+                    # 仅编号，不标注来源信息（避免 LLM 自行拼出来源段落）
+                    label = f"[参考片段 {i+1}]"
+                    answer_parts.append(f"{label}\n{content.strip()}")
+                    # 从 source_file + hierarchy_path 构建来源
+                    src_file = doc.get("source_file", "")
+                    hierarchy = doc.get("hierarchy_path", "")
+                    if src_file:
+                        src_line = f"{src_file}：{hierarchy}" if hierarchy else src_file
+                        if src_line not in seen_sources:
+                            seen_sources.add(src_line)
+                            source_parts.append(src_line)
 
-                # 格式 3：reranked_results — Coze 重排序后的文档片段，
-                # 作为补充参考资料与 extracted_answer 一并注入 LLM 上下文
-                reranked = data.get("reranked_results")
-                if isinstance(reranked, list) and reranked:
-                    parts = [answer] if answer else []
-                    for i, doc in enumerate(reranked):
-                        content = doc.get("content", "")
-                        if not content:
-                            continue
-                        # 仅编号，不标注来源文件/章节——
-                        # 避免 LLM 根据文件名和章节标题自行拼出"知识库来源"段落
-                        label = f"[参考片段 {i+1}]"
-                        parts.append(f"{label}\n{content.strip()}")
-
-                    answer = "\n\n".join(parts)
-
-                    logger.info(
-                        f"[RAG] reranked_results merged: {len(reranked)} docs"
-                    )
-                    sys.stdout.write(
-                        f"[RAG] reranked_results merged: {len(reranked)} docs\n"
-                    ); sys.stdout.flush()
-
+                logger.info(
+                    f"[RAG] reranked_results: {len(reranked)} docs, "
+                    f"{len(source_parts)} unique sources"
+                )
+                sys.stdout.write(
+                    f"[RAG] reranked_results: {len(reranked)} docs, "
+                    f"{len(source_parts)} unique sources\n"
+                ); sys.stdout.flush()
                 return {
                     "success": data.get("success", True),
-                    "answer": answer,
-                    "source": source,
+                    "answer": "\n\n".join(answer_parts),
+                    "source": "\n".join(source_parts) if source_parts else "",
+                    "raw": data,
+                }
+
+            # 格式 1-旧：Coze QA 工作流（extracted_answer + extracted_source，已废弃，保留兼容）
+            if isinstance(data, dict) and "extracted_answer" in data:
+                logger.info(f"[RAG] Coze QA (legacy) matched: {data.get('message', '')}")
+                return {
+                    "success": data.get("success", True),
+                    "answer": data.get("extracted_answer", ""),
+                    "source": data.get("extracted_source", ""),
                     "raw": data,
                 }
 
